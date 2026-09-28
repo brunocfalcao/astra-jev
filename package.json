@@ -1,6 +1,6 @@
 {
   "name": "astra-jev",
-  "version": "0.4.2-beta.1",
+  "version": "0.0.1",
   "type": "module",
   "bin": {
     "astra-jev": "bin/astra-jev.mjs",
