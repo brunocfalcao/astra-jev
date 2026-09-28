@@ -321,8 +321,12 @@ export class Session {
         "turn/start",
         this.withPermissions(options),
       );
-      if (astra) this.controller.attach(result.turn.id);
-      this.turnId = result.turn.id;
+      // A fast turn can complete in the same JSONL chunk as this response,
+      // before the awaiting continuation runs. Do not revive its cleared ID.
+      if (this.running) {
+        if (astra) this.controller.attach(result.turn.id);
+        this.turnId = result.turn.id;
+      }
       return result;
     } catch (error) {
       this.running = false;

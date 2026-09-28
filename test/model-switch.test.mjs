@@ -458,3 +458,44 @@ test("quiet TUI keeps fresh and resumed Jev decisions, status and model-switch n
     }
   }
 });
+
+test("completion delivered before the turn-start continuation cannot restore a finished turn ID", async () => {
+  for (const model of ["gpt-6-sol", "gpt-6-astra"]) {
+    const f = fixture({}, { verbose: false });
+    try {
+      await f.open({ resume: "fixture-resumed" });
+      const request = f.session.transport.request.bind(f.session.transport);
+      f.session.transport.request = async (method, params, options) => {
+        if (method !== "turn/start") return request(method, params, options);
+        let listener;
+        const completed = new Promise((resolve) => {
+          listener = (message) => {
+            if (message.method === "turn/completed") resolve();
+          };
+          f.session.transport.on("notification", listener);
+        });
+        try {
+          const result = await request(method, params, options);
+          // JSONL can deliver a response and all notifications in one chunk,
+          // before the caller's awaiting continuation runs.
+          await completed;
+          return result;
+        } finally {
+          f.session.transport.off("notification", listener);
+        }
+      };
+      for (let turn = 0; turn < 3; turn++) {
+        assert.equal(Boolean(f.session.running), false);
+        assert.equal(
+          (await f.turn({ model, effort: "medium" })).status,
+          "completed",
+        );
+        assert.equal(f.session.running, false);
+        assert.equal(f.session.turnId, null);
+      }
+      assert.equal(f.states.length, model === "gpt-6-astra" ? 3 : 0);
+    } finally {
+      await f.close();
+    }
+  }
+});
