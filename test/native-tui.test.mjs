@@ -254,7 +254,7 @@ test("native TUI gateway uses private IPC and retains Jev control and approval d
     );
     assert.deepEqual(
       notices.map((x) => x.params.run.entries[0].text),
-      ["Astra set to LOW effort (Jev)", "Astra changed to HIGH effort (Jev)"],
+      [],
     );
     assert.equal(
       observed.filter((x) => x.type === "decision_selected").length,
@@ -268,6 +268,7 @@ test("native TUI gateway uses private IPC and retains Jev control and approval d
         (x) => x.type === "native_tui_effort_notice" && x.effort === effort,
       );
       assert.ok(captured >= 0 && displayed > captured);
+      assert.equal(records[displayed].displayed, false);
     }
     assert.ok(!JSON.stringify(turnParams).includes("Astra changed"));
     assert.deepEqual(

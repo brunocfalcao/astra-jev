@@ -27,7 +27,7 @@ try {
         `Jev is required; this invocation would run without Jev (${plan.reason ?? "disabled"}). No Codex process was started.`,
       );
     console.error(
-      `Astra-Jev: Jev inactive (${config.enabled ? plan.reason : "disabled in astra-jev.json"}); forwarding arguments to stock Codex.`,
+      "Starting Codex without automatic reasoning adjustments.",
     );
     process.exitCode = exitCode(await runCodex(args));
   } else {
@@ -96,9 +96,6 @@ try {
       },
     });
     await gateway.open();
-    console.error(
-      `Astra-Jev: ${config.fixedEffort ? `FIXED ${config.fixedEffort} effort; Jev inactive` : plan.resume ? "RESUME PICKER: Enter resumes with adaptive Jev; Esc starts fresh" : "ADAPTIVE Jev checkpoints"}.\nRequire Jev: ${config.requireJev ? "on" : "off"}\nDecision log: ${logPath}\nLive evidence: astra-jev-control --status ${name}\nWrapper settings: ${join(plan.cwd, "astra-jev.json")}`,
-    );
     for (const signal of ["SIGINT", "SIGTERM"]) {
       const handler = () => {
         void gateway

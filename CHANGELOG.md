@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.1-rc.1 — 2026-09-28
+
+### Features
+- [NEW FEATURE] Add cumulative project usage tables and complete paired benchmark comparisons including Jev overhead.
+
+### Improvements
+- [IMPROVED] Keep routine native effort updates quiet while retaining status evidence, model transitions and evaluator failure notices.
+- [IMPROVED] Simplify terminal startup and put installation and everyday use first in the README.
+
+**Source update:** installable release validation remains separate; the README links the existing published archive.
+
 ## 1.0.0-rc.1 — 2026-09-28
 
 ### Features

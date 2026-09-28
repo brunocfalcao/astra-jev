@@ -109,13 +109,29 @@ export class NativeTui {
       verbose: this.verbose,
       emit: (message, detail) => {
         if (this.client?.readyState !== WebSocket.OPEN) return;
-        this.send(message);
+        // Routine reasoning decisions remain available in the decision log.
+        // Only show changes that affect what the user can expect.
+        if (detail.outcome === "mode") {
+          message.params.run.entries[0].text =
+            this.session.mode === "inactive"
+              ? "Automatic reasoning adjustments are off for this model. Select Astra to turn them back on."
+              : this.session.status().policy === "auto"
+                ? "Automatic reasoning adjustments are back on."
+                : "Using your chosen reasoning level. Automatic adjustments are off.";
+          this.send(message);
+        } else if (detail.outcome === "unavailable") {
+          message.params.run.entries[0].text = this.session.requireJev
+            ? "Automatic reasoning adjustment failed. This task is stopping because your settings require it."
+            : "Automatic reasoning adjustment is unavailable. Work continues with the current reasoning setting.";
+          this.send(message);
+        }
         this.record({
           time: new Date().toISOString(),
           type: "native_tui_effort_notice",
           threadId: message.params.threadId,
           turnId: message.params.turnId,
           ...detail,
+          displayed: ["mode", "unavailable"].includes(detail.outcome),
         });
       },
     });

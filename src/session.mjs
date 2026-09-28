@@ -3,7 +3,7 @@ import { Controller } from "./controller.mjs";
 import { Context } from "./context.mjs";
 import { HookBridge } from "./hook-bridge.mjs";
 import { Status } from "./status.mjs";
-import { stat } from "node:fs/promises";
+import { stat, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 
 export class Session {
@@ -177,6 +177,7 @@ export class Session {
     this.record({
       time: new Date().toISOString(),
       type: "session_opened",
+      projectCwd: await realpath(this.cwd),
       threadId: this.threadId,
       mode: this.mode,
       captureAvailable: this.controller.captureEvents,

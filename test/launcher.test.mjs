@@ -227,7 +227,10 @@ test("installed entry point creates project JSON and forwards native commands wi
         args,
         hasKey: false,
       });
-      assert.match(result.stderr, /Jev inactive/);
+      assert.match(
+        result.stderr,
+        /Starting Codex without automatic reasoning adjustments/,
+      );
       assert.doesNotMatch(result.stderr, /not-a-real-key/);
     }
     assert.deepEqual(

@@ -1,5 +1,5 @@
 import { createInterface, clearLine, cursorTo } from "node:readline";
-import { statusLines } from "./status.mjs";
+import { modeLabel, statusLines } from "./status.mjs";
 
 // External text never controls the terminal (including split OSC/CSI sequences).
 // Preserve readable escapes instead of executing cursor/clipboard/title controls.
@@ -87,7 +87,7 @@ export class Terminal {
   header(info) {
     this.output.write(`\n${this.style("Astra + Jev")}\n`);
     this.message(
-      `Thread: ${info.threadId}\nMode: ${info.mode}\nDecision log: ${info.logPath ?? "host log"}\n\n/help commands  /status evidence  Ctrl-C interrupt`,
+      `Thread: ${info.threadId}\n${modeLabel(info.status)}\n/status evidence  /log decision log  /help commands`,
     );
   }
   event(event) {

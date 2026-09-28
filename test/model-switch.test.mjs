@@ -165,12 +165,18 @@ test("Astra to Sol to Astra preserves the thread, native effort and permissions 
       .filter((m) => m.method === "hook/completed")
       .flatMap((m) => m.params.run.entries.map((x) => x.text));
     assert.ok(
-      notices.some((text) => /Jev inactive for the selected model/.test(text)),
+      notices.some((text) =>
+        /Automatic reasoning adjustments are off for this model/.test(text),
+      ),
     );
-    assert.ok(notices.some((text) => /Jev active.*Astra/.test(text)));
+    assert.ok(
+      notices.some((text) =>
+        /Automatic reasoning adjustments are back on/.test(text),
+      ),
+    );
     assert.equal(
       notices.filter((text) => text === "Astra set to LOW effort (Jev)").length,
-      2,
+      0,
     );
   } finally {
     await f.close();
@@ -381,7 +387,7 @@ test("inactive notices appear only when leaving Astra, with silent non-Astra tur
       model,
     });
   const inactive =
-    "Jev inactive for the selected model; select Astra to reactivate";
+    "Automatic reasoning adjustments are off for this model. Select Astra to turn them back on.";
   try {
     await f.open();
     assert.deepEqual(notices(), []);
@@ -396,12 +402,15 @@ test("inactive notices appear only when leaving Astra, with silent non-Astra tur
     assert.equal(f.session.status().mode, "inactive");
     assert.equal(f.states.length, 0);
     await select("gpt-6-astra");
-    assert.deepEqual(notices(), [inactive, "Jev active for Astra again"]);
+    assert.deepEqual(notices(), [
+      inactive,
+      "Automatic reasoning adjustments are back on.",
+    ]);
     await select("gpt-6-sol");
     await f.turn({ effort: "medium" });
     assert.deepEqual(notices(), [
       inactive,
-      "Jev active for Astra again",
+      "Automatic reasoning adjustments are back on.",
       inactive,
     ]);
     assert.equal(f.states.length, 0);
@@ -439,12 +448,12 @@ test("quiet TUI keeps fresh and resumed Jev decisions, status and model-switch n
       await f.turn({ model: "gpt-6-sol", effort: "medium" });
       assert.equal(f.states.length, evaluations);
       assert.deepEqual(notices(), [
-        "Jev inactive for the selected model; select Astra to reactivate",
+        "Automatic reasoning adjustments are off for this model. Select Astra to turn them back on.",
       ]);
       await f.turn({ model: "gpt-6-astra" });
       assert.deepEqual(notices(), [
-        "Jev inactive for the selected model; select Astra to reactivate",
-        "Jev active for Astra again",
+        "Automatic reasoning adjustments are off for this model. Select Astra to turn them back on.",
+        "Automatic reasoning adjustments are back on.",
       ]);
       assert.equal(f.states.length, evaluations + 2);
     } finally {

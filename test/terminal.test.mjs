@@ -66,6 +66,21 @@ test("external terminal controls stay visible text even across streamed chunks",
   assert.match(visible, /Done\t42/);
 });
 
+test("startup shows the thread once and leaves detailed evidence to /status", () => {
+  const input = new PassThrough(), output = new PassThrough();
+  let visible = "";
+  output.on("data", (chunk) => (visible += chunk));
+  const terminal = new Terminal({ input, output });
+  try {
+    terminal.header({ threadId: "thread-123", mode: "adaptive-checkpoint", status: { sandbox: "dangerFullAccess" } });
+    assert.equal(visible.match(/Thread: thread-123/g)?.length, 1);
+    assert.match(visible, /\/status evidence/);
+    assert.doesNotMatch(visible, /Decision log:/);
+  } finally {
+    terminal.close();
+  }
+});
+
 test("terminal commands stay local while busy and approvals are explicitly answered", async () => {
   const input = new PassThrough(),
     output = new PassThrough(),

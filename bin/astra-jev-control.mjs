@@ -15,6 +15,11 @@ import { Session } from "../src/session.mjs";
 import { AppServer } from "../src/app-server.mjs";
 import { redact } from "../src/context.mjs";
 import { Terminal, terminalSafe, eventMessage } from "../src/terminal.mjs";
+import {
+  projectTotals,
+  projectTable,
+  measuredComparisons,
+} from "../src/project-status.mjs";
 import { latestStatus, recordedSessions, statusLines } from "../src/status.mjs";
 import { ensureKey, setup } from "../src/onboarding.mjs";
 import { ensureSkill } from "../src/skill.mjs";
@@ -31,13 +36,22 @@ const args = process.argv.slice(2),
 let session, terminal, key, host, logFd, nativeTui;
 function usage() {
   console.log(
-    "Usage: astra-jev-control [--cwd DIR] [--resume THREAD_ID] [--read-only] [--fixed-effort LEVEL] [--image PATH] [PROMPT]\n       astra-jev-control --tui [--cwd DIR] [--read-only] [PROMPT]\n       astra-jev-control --serve NAME [--cwd DIR] [--read-only]\n       astra-jev-control --attach NAME [--image PATH] [PROMPT]\n       astra-jev-control --status NAME\n       astra-jev-control --stop NAME\n       astra-jev-control status [--list | --thread THREAD_ID | --latest]\n       astra-jev-control doctor\n       astra-jev-control setup\n       astra-jev-control install-skill\n       astra-jev-control config [--cwd DIR]\n       astra-jev-control config set KEY VALUE [--cwd DIR]\n\nWithout PROMPT, opens a terminal conversation. /help lists controls. Ctrl-C interrupts.\n--tui opens the stock Codex interface with Jev control; startup prints its live-status command.\n--serve keeps the native session alive in the foreground until stopped.\nstatus reads recent local evidence; --status queries a live named host. Neither calls Jev.\nExperimental: synchronous checkpoints cover supported local tools. Restarted threads use Jev per turn.",
+    "Usage: astra-jev-control [--cwd DIR] [--resume THREAD_ID] [--read-only] [--fixed-effort LEVEL] [--image PATH] [PROMPT]\n       astra-jev-control --tui [--cwd DIR] [--read-only] [PROMPT]\n       astra-jev-control --serve NAME [--cwd DIR] [--read-only]\n       astra-jev-control --attach NAME [--image PATH] [PROMPT]\n       astra-jev-control --status NAME\n       astra-jev-control --stop NAME\n       astra-jev-control status [--table | --list | --thread THREAD_ID | --latest]\n       astra-jev-control doctor\n       astra-jev-control setup\n       astra-jev-control install-skill\n       astra-jev-control config [--cwd DIR]\n       astra-jev-control config set KEY VALUE [--cwd DIR]\n\nWithout PROMPT, opens a terminal conversation. /help lists controls. Ctrl-C interrupts.\n--tui opens the stock Codex interface with Jev control; startup prints its live-status command.\n--serve keeps the native session alive in the foreground until stopped.\nstatus reads recent local evidence; --status queries a live named host. Neither calls Jev.\nExperimental: synchronous checkpoints cover supported local tools. Restarted threads use Jev per turn.",
   );
 }
 try {
   if (args[0] === "status") {
     const tail = args.slice(1);
-    if (tail.length === 1 && tail[0] === "--list") {
+    if (tail.length === 1 && tail[0] === "--table") {
+      console.log(
+        [
+          ...projectTable(await projectTotals(process.cwd())),
+          ...(await measuredComparisons(process.cwd())),
+        ]
+          .map(terminalSafe)
+          .join("\n"),
+      );
+    } else if (tail.length === 1 && tail[0] === "--list") {
       const sessions = await recordedSessions();
       console.log(
         sessions.length
@@ -60,7 +74,7 @@ try {
           !tail[1].startsWith("-"))
       ))
         throw new Error(
-          "Usage: status [--list | --thread THREAD_ID | --latest]",
+          "Usage: status [--table | --list | --thread THREAD_ID | --latest]",
         );
       console.log(
         statusLines(
@@ -466,7 +480,6 @@ try {
     const info = await session.open({ resume: options.resume });
     if (terminal) {
       terminal.header(info);
-      if (info.status) terminal.status(info.status);
     } else
       console.error(
         `Thread: ${info.threadId}\nMode: ${info.mode}\nDecision log: ${info.logPath ?? logPath}`,

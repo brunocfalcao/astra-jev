@@ -1,5 +1,6 @@
 #!/usr/bin/env -S node --use-system-ca
 import {
+  realpath,
   mkdtemp,
   writeFile,
   mkdir,
@@ -71,6 +72,8 @@ const stop = () => {
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
 const report = {
+  comparisonVersion: 1,
+  projectCwd: await realpath(process.cwd()),
   startedAt: new Date().toISOString(),
   node: process.version,
   codex: spawnSync("codex", ["--version"], { encoding: "utf8" }).stdout?.trim(),
