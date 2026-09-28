@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.0.8 — 2026-09-28
+
+### Fixes
+- [BUG FIX] Remove the Codex version-validation gate so managed fresh and resumed sessions launch with the installed stock Codex, including 0.158.0, without prior version approval.
+
+### Improvements
+- [IMPROVED] Report the observed Codex user agent in doctor instead of a pinned-version compatibility verdict.
+- [IMPROVED] Allow Codex upgrades in the installation, compatibility and contributor guidance; report integration failures through issues or pull requests.
+
+**Upgrade:** restart Astra-Jev after installing. Codex versions are no longer pinned or checked at launch. This remains a macOS beta; independent clean-Mac authentication testing is pending.
+
 ## 0.0.7 — 2026-09-28
 
 - Restore mid-turn Jev adaptation on resumed conversations through native synchronous tool checkpoints. Reassess each supported tool result without inventing generation counts or capture confirmation; preserve native permissions and quiet notices.

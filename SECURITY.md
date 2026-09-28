@@ -8,7 +8,7 @@ Private vulnerability reporting is enabled for this repository. Maintainers shou
 
 ## Supported scope
 
-The macOS beta and its documented Codex version are the validation target. No independent security certification is claimed. We welcome bounded reports about permission enforcement, credential disclosure, private IPC, argument handling, package contents and evaluator data exposure. Test only systems and data you own or have authorization to assess.
+The macOS beta with stock Codex is the validation target; release notes record the Codex version tested without imposing a version pin. No independent security certification is claimed. We welcome bounded reports about permission enforcement, credential disclosure, private IPC, argument handling, package contents and evaluator data exposure. Test only systems and data you own or have authorization to assess.
 
 ## Boundaries
 

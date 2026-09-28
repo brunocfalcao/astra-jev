@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>Adaptive reasoning for GPT-6 Astra. Powered by Jev. Built on stock Codex.</strong><br />
-  v0.0.7 · macOS beta preview · Codex 0.157.1 · Node 22.19+ · MIT
+  v0.0.8 · macOS beta preview · Stock Codex · Node 22.19+ · MIT
 </p>
 
 <p align="center">
@@ -30,19 +30,19 @@
 
 ## Install and start
 
-Install stock Codex separately and sign in with an account that has Astra access. Use the exact supported Codex version; see [compatibility](docs/COMPATIBILITY.md). Jev needs a separate TypeSafe API key.
+Install stock Codex separately and sign in with an account that has Astra access; see [compatibility](docs/COMPATIBILITY.md). Jev needs a separate TypeSafe API key.
 
-**Use Codex 0.157.1 for this release.** Newer Codex versions are not yet validated. If Codex offers an upgrade, skip it while using this beta; the wrapper rejects unsupported versions instead of changing your settings.
+**Codex upgrades are allowed.** Managed sessions use your installed stock Codex without version validation. If an upgrade breaks the integration, [report it](https://github.com/brunocfalcao/astra-jev/issues) or open a pull request.
 
 Install the latest tagged macOS beta:
 
 ```sh
-npm install --global --ignore-scripts 'https://github.com/brunocfalcao/astra-jev/releases/download/v0.0.7/astra-jev-0.0.7.tgz'
+npm install --global --ignore-scripts 'https://github.com/brunocfalcao/astra-jev/releases/download/v0.0.8/astra-jev-0.0.8.tgz'
 astra-jev-control setup
 astra-jev-control doctor
 ```
 
-The [release page](https://github.com/brunocfalcao/astra-jev/releases/tag/v0.0.7) includes the archive, SHA-256 checksum and tested scope. No Git installation is needed for the archive. The macOS CI badge links to the exact checks and results; a clean-Mac trial remains pending.
+The [release page](https://github.com/brunocfalcao/astra-jev/releases/tag/v0.0.8) includes the archive, SHA-256 checksum and tested scope. No Git installation is needed for the archive. The macOS CI badge links to the exact checks and results; a clean-Mac trial remains pending.
 
 > [!WARNING]
 > **Long home-directory paths can prevent startup.** Managed TUI sessions and named hosts create a Unix socket under `~/.local/share/astra-jev/run/`. On macOS, the complete socket path must fit within **103 bytes**. Long usernames or deeply nested home directories can trigger `Session socket path is too long`; the affected launch stops before any model turn. This beta has no setting for a shorter socket directory yet. Moving your project does not shorten this home-based path. If affected, [report the error](https://github.com/brunocfalcao/astra-jev/issues/new/choose) with your home-path byte length, without sharing private paths or credentials.
@@ -164,7 +164,7 @@ One managed TUI owns one thread. Native follow-up input and skills, including `$
 
 ## Update, uninstall, contribute
 
-To update, install the archive from the latest reviewed release using the command above, then restart Astra-Jev. Source installations can use `git+https://github.com/brunocfalcao/astra-jev.git#v0.0.7` with Git installed; use a reviewed tag or commit SHA for repeatability. Project settings and credentials survive reinstall. Uninstall with:
+To update, install the archive from the latest reviewed release using the command above, then restart Astra-Jev. Source installations can use `git+https://github.com/brunocfalcao/astra-jev.git#v0.0.8` with Git installed; use a reviewed tag or commit SHA for repeatability. Project settings and credentials survive reinstall. Uninstall with:
 
 ```sh
 npm uninstall --global astra-jev

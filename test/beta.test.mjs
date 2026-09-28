@@ -45,7 +45,8 @@ function transportFixture({
   const t = new EventEmitter();
   t.config = [];
   t.calls = [];
-  t.connect = async () => ({ userAgent: `astra_jev/${version} fixture` });
+  t.connect = async () =>
+    version === null ? {} : { userAgent: `astra_jev/${version} fixture` };
   t.close = async () => {};
   t.request = async (method, params) => {
     t.calls.push({ method, params });
@@ -63,7 +64,7 @@ function transportFixture({
         ],
       };
     if (method === "hooks/list") return { data: [{ hooks: [hook] }] };
-    if (method === "thread/resume") {
+    if (["thread/start", "thread/resume"].includes(method)) {
       const args = t.config.find((x) =>
         x.startsWith("mcp_servers.astra_jev_checkpoint.args="),
       );
@@ -187,15 +188,38 @@ test("resume without permission overrides adds no wrapper sandbox or approval po
   }
 });
 
-test("all managed modes reject an unverified Codex version before thread creation", async () => {
-  for (const resume of [undefined, "owned"]) {
-    const transport = transportFixture({ version: "0.158.0" });
-    const s = new Session({ transport, fixedEffort: "high" });
-    try {
-      await assert.rejects(s.open({ resume }), /require verified stock Codex/);
-      assert.deepEqual(transport.calls, []);
-    } finally {
-      await s.close();
+test("fresh and resumed managed sessions open without Codex version validation", async () => {
+  for (const version of ["0.157.1", "0.158.0", "99.0.0", null]) {
+    for (const resume of [undefined, "owned"]) {
+      for (const fixedEffort of [null, "high"]) {
+        const transport = transportFixture({ version });
+        const s = new Session({
+          transport,
+          fixedEffort,
+          jev: { decide: async () => ({ effort: "low", leaseSteps: 1 }) },
+        });
+        try {
+          assert.deepEqual(transport.calls, []);
+          const opened = await s.open({ resume });
+          assert.equal(opened.threadId, "owned");
+          assert.equal(
+            opened.mode,
+            fixedEffort
+              ? "fixed"
+              : resume
+                ? "adaptive-resume"
+                : "adaptive-checkpoint",
+          );
+          assert.deepEqual(
+            transport.calls
+              .filter((call) => call.method.startsWith("thread/"))
+              .map((call) => call.method),
+            [resume ? "thread/resume" : "thread/start"],
+          );
+        } finally {
+          await s.close();
+        }
+      }
     }
   }
 });

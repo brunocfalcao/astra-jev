@@ -215,9 +215,7 @@ try {
         JSON.stringify(
           {
             astraAvailable: true,
-            checkpointVersionCompatible: /^astra_jev\/0\.157\.1(?:\s|$)/.test(
-              initialized.userAgent ?? "",
-            ),
+            codexUserAgent: initialized.userAgent ?? "unknown",
             authentication: account.account?.type ?? "unknown",
             jevVerified: !!result,
             jevModel: result?.evaluatedModel,

@@ -73,12 +73,7 @@ export class Session {
       });
       this.transport.config.push(...(await this.bridge.open()));
     }
-    const initialized = await this.transport.connect();
-    this.initialized = initialized;
-    if (!/^astra_jev\/0\.157\.1(?:\s|$)/.test(initialized.userAgent ?? ""))
-      throw new Error(
-        "Managed sessions require verified stock Codex 0.157.1; this version must be validated before integration can run.",
-      );
+    this.initialized = await this.transport.connect();
     const hookConfig = gated
       ? await this.bridge.trustConfig(this.transport, this.cwd)
       : {};
