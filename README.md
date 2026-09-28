@@ -11,7 +11,7 @@ macOS beta · Node 22.19+ · Your Codex account + your TypeSafe API key
 Install stock Codex and sign in with an account that has GPT-6 Astra access. Then install the latest published archive:
 
 ```sh
-npm install --global --ignore-scripts 'https://github.com/brunocfalcao/astra-jev/releases/download/v1.0.0-rc.1/astra-jev-1.0.0-rc.1.tgz'
+npm install --global --ignore-scripts 'https://github.com/brunocfalcao/astra-jev/releases/download/v1.0.1-rc.1/astra-jev-1.0.1-rc.1.tgz'
 astra-jev-control setup
 astra-jev-control doctor
 ```
@@ -24,7 +24,7 @@ Open a terminal in your project and run:
 astra-jev
 ```
 
-The instructions below describe the current source. Check the [release notes](https://github.com/brunocfalcao/astra-jev/releases) for features included in the published archive. Restart after updating.
+Restart after updating. See the [release notes](https://github.com/brunocfalcao/astra-jev/releases) for validation and known limits.
 
 ## Everyday use
 
@@ -37,7 +37,7 @@ Work normally in Codex. Jev adapts Astra's effort at supported local-tool checkp
 
 Use `/model` to switch models. Jev pauses for other models and resumes when you return to Astra. Codex keeps control of permissions.
 
-Routine effort changes stay quiet in the current source. Model transitions and evaluator failures remain visible; decisions remain available in status and logs.
+Routine effort changes stay quiet. Model transitions and evaluator failures remain visible; decisions remain available in status and logs.
 
 ## Settings and usage
 
@@ -72,7 +72,7 @@ The first launch creates `astra-jev.json`; existing files are preserved.
 | `enabled` | `true` | Enable the managed integration. |
 | `fixedEffort` | `null` | Use Jev, or choose `low`, `medium`, `high`, `xhigh`, `max`, `ultra`. |
 | `requireJev` | `false` | Refuse fixed/direct launches and non-Astra selection; stop on evaluator or effort-publication failure. |
-| `verbose` | `true` | Control routine notice generation; the current native TUI hides routine effort notices either way. |
+| `verbose` | `true` | Control routine notice generation; the native TUI hides routine effort notices either way. |
 
 Add `--cwd PATH` to configuration commands to target another project. Legacy `resumePermissions` and `noAltScreen` settings are ignored. Use native Codex controls for permissions and `--no-alt-screen` for inline rendering.
 

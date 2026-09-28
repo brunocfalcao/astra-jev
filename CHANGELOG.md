@@ -9,7 +9,7 @@
 - [IMPROVED] Keep routine native effort updates quiet while retaining status evidence, model transitions and evaluator failure notices.
 - [IMPROVED] Simplify terminal startup and put installation and everyday use first in the README.
 
-**Source update:** installable release validation remains separate; the README links the existing published archive.
+**Release candidate:** macOS only. Independent clean-Mac proof remains pending. Restart after installing; existing processes retain loaded code.
 
 ## 1.0.0-rc.1 — 2026-09-28
 
