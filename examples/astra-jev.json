@@ -3,7 +3,5 @@
   "enabled": true,
   "verbose": true,
   "fixedEffort": null,
-  "noAltScreen": true,
-  "requireJev": false,
-  "resumePermissions": "read-only"
+  "requireJev": false
 }

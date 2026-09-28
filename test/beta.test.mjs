@@ -10,7 +10,6 @@ import {
   symlink,
   chmod,
   access,
-  realpath,
 } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -61,209 +60,103 @@ function transportFixture({
   return t;
 }
 
-test("resumed policy is read-only before first work and cannot be widened by later client turns", async () => {
-  const transport = transportFixture();
-  const s = new Session({
-    transport,
-    jev: { decide: async () => ({ effort: "low", leaseSteps: 1 }) },
-  });
-  assert.equal(s.threadId, undefined);
-  try {
-    await s.open({
-      resume: "owned",
-      params: { sandbox: "danger-full-access", approvalPolicy: "on-request" },
-    });
-    const open = transport.calls.find(
-      (x) => x.method === "thread/resume",
-    ).params;
-    assert.equal(open.sandbox, "read-only");
-    assert.equal(open.approvalPolicy, "never");
-    for (let i = 0; i < 2; i++) {
-      await s.startTurn({
-        threadId: "owned",
-        input: [],
-        sandboxPolicy: { type: "dangerFullAccess" },
-        permissions: { id: "full" },
-        approvalPolicy: "on-request",
-      });
-      const turn = transport.calls
-        .filter((x) => x.method === "turn/start")
-        .at(-1).params;
-      assert.deepEqual(turn.sandboxPolicy, {
-        type: "readOnly",
-        networkAccess: false,
-      });
-      assert.equal(turn.approvalPolicy, "never");
-      assert.equal(turn.permissions, undefined);
-      s.running = false;
-    }
-  } finally {
-    await s.close();
-  }
-});
-
-test("resume rejects an unconfirmed permission policy before any turn; explicit codex policy delegates", async () => {
-  for (const policy of ["read-only", "codex"]) {
-    const transport = transportFixture({ sandbox: "dangerFullAccess" });
+test("resumed sessions leave native permissions unchanged across Astra and Sol turns and settings", async () => {
+  for (const sandbox of [
+    { type: "readOnly", networkAccess: false },
+    {
+      type: "workspaceWrite",
+      writableRoots: ["/project"],
+      networkAccess: true,
+    },
+    { type: "dangerFullAccess" },
+  ]) {
+    const transport = transportFixture({ resumeResult: { sandbox } });
+    let decisions = 0;
     const s = new Session({
       transport,
-      resumePermissions: policy,
-      fixedEffort: "high",
-    });
-    try {
-      if (policy === "read-only")
-        await assert.rejects(s.open({ resume: "owned" }), /did not confirm/);
-      else {
-        await s.open({ resume: "owned" });
-        assert.equal(s.status().sandbox, "dangerFullAccess");
-      }
-      assert.equal(
-        transport.calls.some((x) => x.method === "turn/start"),
-        false,
-      );
-    } finally {
-      await s.close();
-    }
-  }
-});
-
-test("workspace-write resume permits project edits while pinning later model turns and settings", async () => {
-  const policy = {
-    type: "workspaceWrite",
-    writableRoots: await Promise.all(
-      [tmpdir(), "/tmp"].map((path) => realpath(path)),
-    ),
-    networkAccess: false,
-    excludeTmpdirEnvVar: false,
-    excludeSlashTmp: false,
-  };
-  const transport = transportFixture({
-    resumeResult: {
-      sandbox: policy,
-      cwd: process.cwd(),
-      runtimeWorkspaceRoots: [process.cwd()],
-      approvalPolicy: "never",
-    },
-  });
-  const s = new Session({
-    transport,
-    cwd: process.cwd(),
-    resumePermissions: "workspace-write",
-    jev: { decide: async () => ({ effort: "low", leaseSteps: 1 }) },
-  });
-  try {
-    await s.open({
-      resume: "owned",
-      params: {
-        cwd: "/elsewhere",
-        sandbox: "danger-full-access",
-        permissions: "full",
-        runtimeWorkspaceRoots: ["/elsewhere"],
-        config: {
-          "sandbox_workspace_write.network_access": true,
-          "sandbox_workspace_write.writable_roots": ["/elsewhere"],
+      jev: {
+        decide: async () => {
+          decisions++;
+          return { effort: "low", leaseSteps: 1 };
         },
       },
     });
-    const opened = transport.calls.find(
-      (call) => call.method === "thread/resume",
-    ).params;
-    assert.equal(opened.sandbox, "workspace-write");
-    assert.equal(opened.cwd, process.cwd());
-    assert.equal(opened.permissions, null);
-    assert.deepEqual(opened.runtimeWorkspaceRoots, [process.cwd()]);
-    assert.equal(
-      opened.config["sandbox_workspace_write.network_access"],
-      false,
-    );
-    assert.deepEqual(
-      opened.config["sandbox_workspace_write.writable_roots"],
-      [],
-    );
-    assert.equal(s.status().sandbox, "workspaceWrite");
-    for (const model of ["gpt-6-sol", "gpt-6-astra"]) {
-      await s.startTurn({
-        model,
-        input: [],
-        cwd: "/elsewhere",
-        permissions: "full",
-        runtimeWorkspaceRoots: ["/elsewhere"],
-        sandboxPolicy: { type: "dangerFullAccess" },
-      });
-      const turn = transport.calls
-        .filter((call) => call.method === "turn/start")
-        .at(-1).params;
-      assert.deepEqual(turn.sandboxPolicy, { ...policy, writableRoots: [] });
-      assert.equal(turn.cwd, process.cwd());
-      assert.equal(turn.approvalPolicy, "never");
-      assert.equal(turn.permissions, undefined);
-      assert.deepEqual(turn.runtimeWorkspaceRoots, [process.cwd()]);
-      s.running = false;
-      await s.updateSettings({
-        model,
-        cwd: "/elsewhere",
-        permissions: "full",
-        sandboxPolicy: { type: "dangerFullAccess" },
-      });
-      const update = transport.calls.at(-1).params;
-      assert.deepEqual(update.sandboxPolicy, { ...policy, writableRoots: [] });
-      assert.equal(update.cwd, process.cwd());
-      assert.equal(update.permissions, undefined);
-    }
-  } finally {
-    await s.close();
-  }
-});
-
-test("workspace-write resume rejects broader or unconfirmed native permissions before work", async () => {
-  const good = {
-    sandbox: {
-      type: "workspaceWrite",
-      writableRoots: [],
-      networkAccess: false,
-    },
-    cwd: process.cwd(),
-    runtimeWorkspaceRoots: [process.cwd()],
-    approvalPolicy: "never",
-  };
-  for (const bad of [
-    { sandbox: { type: "dangerFullAccess" } },
-    { sandbox: { ...good.sandbox, networkAccess: true } },
-    { sandbox: { ...good.sandbox, writableRoots: ["/elsewhere"] } },
-    {
-      sandbox: {
-        ...good.sandbox,
-        writableRoots: ["/tmp"],
-        excludeSlashTmp: true,
-      },
-    },
-    { sandbox: { ...good.sandbox, writableRoots: null } },
-    { cwd: "/elsewhere" },
-    { runtimeWorkspaceRoots: ["/elsewhere"] },
-    { runtimeWorkspaceRoots: null },
-    { runtimeWorkspaceRoots: [] },
-    { approvalPolicy: "on-request" },
-  ]) {
-    const transport = transportFixture({ resumeResult: { ...good, ...bad } });
-    const s = new Session({
-      transport,
-      cwd: process.cwd(),
-      resumePermissions: "workspace-write",
-      fixedEffort: "high",
-    });
     try {
-      await assert.rejects(
-        s.open({ resume: "owned" }),
-        /did not confirm.*workspace-write/,
-      );
       assert.equal(s.threadId, undefined);
-      assert.equal(
-        transport.calls.some((call) => call.method === "turn/start"),
-        false,
+      await s.open({
+        resume: "owned",
+        params: {
+          cwd: "/project",
+          approvalPolicy: "on-request",
+          config: { "sandbox_workspace_write.network_access": true },
+        },
+      });
+      assert.deepEqual(
+        transport.calls.find((r) => r.method === "thread/resume").params,
+        {
+          threadId: "owned",
+          cwd: "/project",
+          model: "gpt-6-astra",
+          approvalPolicy: "on-request",
+          config: { "sandbox_workspace_write.network_access": true },
+        },
       );
+      assert.equal(s.status().sandbox, sandbox.type);
+      for (const model of ["gpt-6-astra", "gpt-6-sol", "gpt-6-astra"]) {
+        const permissions = {
+          sandboxPolicy: sandbox,
+          approvalPolicy: "on-request",
+          cwd: "/native-project",
+          runtimeWorkspaceRoots: ["/native-project"],
+        };
+        await s.startTurn({ model, input: [], ...permissions });
+        const sent = transport.calls
+          .filter((r) => r.method === "turn/start")
+          .at(-1).params;
+        for (const [key, value] of Object.entries(permissions))
+          assert.deepEqual(sent[key], value);
+        s.running = false;
+        const settings = {
+          model,
+          threadId: "owned",
+          permissions: "native-profile",
+          approvalPolicy: "untrusted",
+          cwd: "/native-project",
+        };
+        await s.updateSettings(settings);
+        assert.deepEqual(transport.calls.at(-1), {
+          method: "thread/settings/update",
+          params: settings,
+        });
+      }
+      assert.equal(decisions, 2);
     } finally {
       await s.close();
     }
+  }
+});
+
+test("resume without permission overrides adds no wrapper sandbox or approval policy", async () => {
+  const transport = transportFixture();
+  const s = new Session({ transport, fixedEffort: "high" });
+  try {
+    await s.open({ resume: "owned" });
+    assert.deepEqual(
+      transport.calls.find((r) => r.method === "thread/resume").params,
+      { threadId: "owned", model: "gpt-6-astra", config: {} },
+    );
+    await s.startTurn({ input: [] });
+    const turn = transport.calls.at(-1).params;
+    for (const key of [
+      "sandboxPolicy",
+      "approvalPolicy",
+      "permissions",
+      "runtimeWorkspaceRoots",
+      "cwd",
+    ])
+      assert.equal(Object.hasOwn(turn, key), false);
+  } finally {
+    await s.close();
   }
 });
 

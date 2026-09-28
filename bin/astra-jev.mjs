@@ -5,12 +5,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { writeSync } from "node:fs";
 import { projectConfig } from "../src/project-config.mjs";
-import {
-  planLaunch,
-  runCodex,
-  exitCode,
-  snapshotDefaults,
-} from "../src/codex-launch.mjs";
+import { planLaunch, runCodex, exitCode } from "../src/codex-launch.mjs";
 import { Jev, loadKey } from "../src/jev.mjs";
 import { Session } from "../src/session.mjs";
 import { NativeTui } from "../src/native-tui.mjs";
@@ -18,6 +13,7 @@ import { SessionHost, sessionSocket } from "../src/persistent.mjs";
 import { redact } from "../src/context.mjs";
 import { terminalSafe } from "../src/terminal.mjs";
 import { ensurePrivacy } from "../src/onboarding.mjs";
+import { ensureSkill } from "../src/skill.mjs";
 
 const args = process.argv.slice(2);
 let session, host, gateway, log, key;
@@ -33,12 +29,13 @@ try {
     console.error(
       `Astra-Jev: Jev inactive (${config.enabled ? plan.reason : "disabled in astra-jev.json"}); forwarding arguments to stock Codex.`,
     );
-    process.exitCode = exitCode(await runCodex([...snapshotDefaults, ...args]));
+    process.exitCode = exitCode(await runCodex(args));
   } else {
     if (!process.stdin.isTTY)
       throw new Error(
         "Interactive Codex requires a terminal; use astra-jev exec for stock non-interactive execution",
       );
+    await ensureSkill();
     if (!config.fixedEffort) {
       await ensurePrivacy();
       key = loadKey();
@@ -67,7 +64,6 @@ try {
         config: [...plan.config],
         fixedEffort: config.fixedEffort,
         requireJev: config.requireJev,
-        resumePermissions: config.resumePermissions,
         jev: key ? new Jev({ key }) : null,
         secrets: key ? [key] : [],
         logPath,
@@ -98,7 +94,7 @@ try {
     });
     await gateway.open();
     console.error(
-      `Astra-Jev: ${config.fixedEffort ? `FIXED ${config.fixedEffort} effort; Jev inactive` : plan.resume ? "RESUME PICKER: Enter resumes with per-turn Jev; Esc starts fresh" : "ADAPTIVE Jev checkpoints"}.\n${plan.resume ? `Resume permissions: ${config.resumePermissions}.\n` : ""}Require Jev: ${config.requireJev ? "on" : "off"}\nDecision log: ${logPath}\nLive evidence: astra-jev-control --status ${name}\nWrapper settings: ${join(plan.cwd, "astra-jev.json")}`,
+      `Astra-Jev: ${config.fixedEffort ? `FIXED ${config.fixedEffort} effort; Jev inactive` : plan.resume ? "RESUME PICKER: Enter resumes with per-turn Jev; Esc starts fresh" : "ADAPTIVE Jev checkpoints"}.\nRequire Jev: ${config.requireJev ? "on" : "off"}\nDecision log: ${logPath}\nLive evidence: astra-jev-control --status ${name}\nWrapper settings: ${join(plan.cwd, "astra-jev.json")}`,
     );
     for (const signal of ["SIGINT", "SIGTERM"]) {
       const handler = () => {
@@ -114,7 +110,6 @@ try {
       await gateway.launch({
         codexArgs: args,
         defaults: plan.defaults,
-        noAltScreen: config.noAltScreen,
       }),
     );
   }

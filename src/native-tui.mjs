@@ -272,11 +272,9 @@ export class NativeTui {
         this.requireThread(params);
         result = await this.session.transport.request(method, {
           ...params,
-          ...this.session.threadOptions,
           model: this.session.selectedModel ?? "gpt-6-astra",
           config: {
             ...params.config,
-            ...this.session.threadOptions.config,
             ...this.session.hookConfig,
           },
         });
@@ -328,18 +326,8 @@ export class NativeTui {
     prompt,
     codexArgs,
     defaults = ["--model", "gpt-6-astra"],
-    noAltScreen = true,
   } = {}) {
-    const args = [
-      "--remote",
-      `unix://${this.path}`,
-      ...(noAltScreen && !codexArgs?.includes("--no-alt-screen")
-        ? ["--no-alt-screen"]
-        : []),
-      ...defaults,
-    ];
-    // Remote resume rejects CLI permission overrides. The owned thread and
-    // Session.startTurn enforce the launcher's native read-only policy instead.
+    const args = ["--remote", `unix://${this.path}`, ...defaults];
     if (codexArgs) args.push(...codexArgs);
     else {
       args.push("--cd", cwd);

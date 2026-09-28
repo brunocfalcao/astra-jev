@@ -5,8 +5,8 @@ Repository target: https://github.com/brunocfalcao/astra-jev
 ## Local release gates
 
 1. Review changed code and notices; ensure no credentials, private histories or machine-specific artifacts are in the source release.
-2. Run `npm ci --ignore-scripts`, `npm run check`, `npm run pack:check`, and `npm run test:install` on macOS. The install check uses a separate prefix, exercises both commands and reinstall/uninstall, and preserves project settings. It does not substitute for a clean-machine native run.
-3. Run an opt-in native check using stock Codex 0.157.1 and synthetic data. Verify fresh LOW/HIGH capture, status, explicit resume, picker/last selection, read-only resume permissions, mode notice, interruption and process cleanup. Keep raw logs private. No live provider calls run in PR CI.
+2. Run `npm ci --ignore-scripts`, `npm run check`, `npm run pack:check`, and `npm run test:install` on macOS. The install check uses a separate prefix, exercises both commands and reinstall/uninstall, and preserves project settings. Verify the bundled skill installs, updates owned content, preserves custom copies, and can use the configuration CLI. It does not substitute for a clean-machine native run.
+3. Run an opt-in native check using stock Codex 0.157.1 and synthetic data. Verify fresh LOW/HIGH capture, status, explicit resume, picker/last selection, native permission preservation, including a configured read-only negative control, concise effort notices, interruption and process cleanup. Keep raw logs private. No live provider calls run in PR CI.
 4. Verify the GitHub macOS CI matrix passes and perform a clean-Mac installation with real Codex authentication. Record what was tested and what remains limited.
 5. Review the MIT license and third-party notices, version/changelog, package contents and checksum. Do not state that a legal or independent security audit occurred.
 

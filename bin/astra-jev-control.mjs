@@ -17,6 +17,8 @@ import { redact } from "../src/context.mjs";
 import { Terminal, terminalSafe, eventMessage } from "../src/terminal.mjs";
 import { latestStatus, statusLines } from "../src/status.mjs";
 import { ensurePrivacy, setup } from "../src/onboarding.mjs";
+import { ensureSkill } from "../src/skill.mjs";
+import { projectConfig, setProjectSetting } from "../src/project-config.mjs";
 import {
   SessionHost,
   SessionClient,
@@ -29,10 +31,15 @@ const args = process.argv.slice(2),
 let session, terminal, key, host, logFd, nativeTui;
 function usage() {
   console.log(
-    "Usage: astra-jev-control [--cwd DIR] [--resume THREAD_ID] [--read-only] [--fixed-effort LEVEL] [--image PATH] [PROMPT]\n       astra-jev-control --tui [--cwd DIR] [--read-only] [PROMPT]\n       astra-jev-control --serve NAME [--cwd DIR] [--read-only]\n       astra-jev-control --attach NAME [--image PATH] [PROMPT]\n       astra-jev-control --status NAME\n       astra-jev-control --stop NAME\n       astra-jev-control status\n       astra-jev-control doctor\n       astra-jev-control setup\n\nWithout PROMPT, opens a terminal conversation. /help lists controls. Ctrl-C interrupts.\n--tui opens the stock Codex interface with Jev control; startup prints its live-status command.\n--serve keeps the native session alive in the foreground until stopped.\nstatus reads recent local evidence; --status queries a live named host. Neither calls Jev.\nExperimental: synchronous checkpoints cover supported local tools. Restarted threads use Jev per turn.",
+    "Usage: astra-jev-control [--cwd DIR] [--resume THREAD_ID] [--read-only] [--fixed-effort LEVEL] [--image PATH] [PROMPT]\n       astra-jev-control --tui [--cwd DIR] [--read-only] [PROMPT]\n       astra-jev-control --serve NAME [--cwd DIR] [--read-only]\n       astra-jev-control --attach NAME [--image PATH] [PROMPT]\n       astra-jev-control --status NAME\n       astra-jev-control --stop NAME\n       astra-jev-control status\n       astra-jev-control doctor\n       astra-jev-control setup\n       astra-jev-control install-skill\n       astra-jev-control config [--cwd DIR]\n       astra-jev-control config set KEY VALUE [--cwd DIR]\n\nWithout PROMPT, opens a terminal conversation. /help lists controls. Ctrl-C interrupts.\n--tui opens the stock Codex interface with Jev control; startup prints its live-status command.\n--serve keeps the native session alive in the foreground until stopped.\nstatus reads recent local evidence; --status queries a live named host. Neither calls Jev.\nExperimental: synchronous checkpoints cover supported local tools. Restarted threads use Jev per turn.",
   );
 }
 try {
+  if (args.length === 1 && args[0] === "install-skill") {
+    const result = await ensureSkill();
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(result.status === "failed" ? 1 : 0);
+  }
   if (args.length === 1 && args[0] === "setup") {
     await setup();
     process.exit(0);
@@ -78,6 +85,39 @@ try {
     else words.push(arg);
   }
   options.cwd = resolve(options.cwd);
+  if (words[0] === "config") {
+    if (args.some((arg) => arg.startsWith("--") && arg !== "--cwd"))
+      throw new Error(
+        "config only accepts --cwd alongside its command arguments",
+      );
+    let config;
+    if (words.length === 1) config = await projectConfig(options.cwd);
+    else if (words.length === 4 && words[1] === "set") {
+      let value;
+      try {
+        value = JSON.parse(words[3]);
+      } catch {
+        value = words[3];
+      }
+      config = await setProjectSetting(options.cwd, words[2], value);
+    } else
+      throw new Error(
+        "Usage: astra-jev-control config [set KEY VALUE] [--cwd DIR]",
+      );
+    console.log(
+      JSON.stringify(
+        {
+          path: join(options.cwd, "astra-jev.json"),
+          settings: config,
+          restartRequired: words.length > 1,
+        },
+        null,
+        2,
+      ),
+    );
+    process.exit(0);
+  }
+
   if (
     options.tui &&
     (options.serve ||
@@ -175,7 +215,6 @@ try {
         JSON.stringify(
           {
             astraAvailable: true,
-            shellSnapshots: "disabled for this utility",
             checkpointVersionCompatible: /^astra_jev\/0\.157\.1(?:\s|$)/.test(
               initialized.userAgent ?? "",
             ),
@@ -336,9 +375,7 @@ try {
           : terminal
             ? terminal.message(s)
             : console.error(safe(s)),
-      threadOptions: options.readOnly
-        ? { sandbox: "read-only", approvalPolicy: "never" }
-        : {},
+      threadOptions: options.readOnly ? { sandbox: "read-only" } : {},
       onRequest: async (m) => {
         if (!terminal) return undefined;
         if (

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { Writable } from "node:stream";
 import { loadKey } from "./jev.mjs";
+import { ensureSkill } from "./skill.mjs";
 
 export const privacyNotice =
   "Jev sends bounded task prompts, public assistant notes and recent tool excerpts to TypeSafe to choose Astra effort. Known secrets are redacted best-effort; arbitrary sensitive text may remain. Hidden reasoning and image bytes are excluded. Codex retains its own history. TypeSafe usage may be billed separately. See PRIVACY.md before using confidential projects.";
@@ -105,6 +106,7 @@ export async function ensurePrivacy() {
   await acknowledgePrivacy();
 }
 export async function setup() {
+  await ensureSkill();
   await ensurePrivacy();
   try {
     loadKey();

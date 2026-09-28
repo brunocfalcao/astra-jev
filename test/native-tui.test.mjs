@@ -3,13 +3,53 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { once, EventEmitter } from "node:events";
-import { stat, mkdtemp, rm } from "node:fs/promises";
+import {
+  stat,
+  mkdtemp,
+  rm,
+  readFile,
+  writeFile,
+  chmod,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { NativeTui } from "../src/native-tui.mjs";
 import WebSocket from "ws";
 import { Session } from "../src/session.mjs";
 import { AppServer } from "../src/app-server.mjs";
 import { SessionHost, SessionClient } from "../src/persistent.mjs";
+
+test("managed TUI leaves native display defaults alone and forwards explicit display flags", async () => {
+  const cwd = await mkdtemp("/tmp/astra-native-display-");
+  const previousPath = process.env.PATH;
+  const capture = join(cwd, "args.json");
+  const executable = join(cwd, "codex");
+  await writeFile(
+    executable,
+    `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(capture)}, JSON.stringify(process.argv.slice(2)));\n`,
+  );
+  await chmod(executable, 0o700);
+  process.env.PATH = `${cwd}:${previousPath}`;
+  try {
+    const gateway = new NativeTui({ session: {} });
+    gateway.path = "/owner/native.sock";
+    for (const args of [
+      ["resume", "owned"],
+      ["--no-alt-screen", "resume", "owned"],
+    ]) {
+      assert.equal((await gateway.launch({ codexArgs: args })).code, 0);
+      assert.deepEqual(JSON.parse(await readFile(capture, "utf8")), [
+        "--remote",
+        "unix:///owner/native.sock",
+        "--model",
+        "gpt-6-astra",
+        ...args,
+      ]);
+    }
+  } finally {
+    process.env.PATH = previousPath;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
 
 test("resume picker hands off overlapping connections without misrouting replies or losing ownership", async () => {
   const transport = new EventEmitter();
@@ -196,11 +236,8 @@ test("native TUI gateway uses private IPC and retains Jev control and approval d
       permissions: { fixture: "override" },
     });
     await complete;
-    assert.deepEqual(turnParams[0].sandboxPolicy, {
-      type: "readOnly",
-      networkAccess: false,
-    });
-    assert.equal(turnParams[0].permissions, undefined);
+    assert.deepEqual(turnParams[0].sandboxPolicy, { type: "dangerFullAccess" });
+    assert.deepEqual(turnParams[0].permissions, { fixture: "override" });
     assert.deepEqual(
       records
         .filter((x) => x.type === "generation_completed")
@@ -218,7 +255,6 @@ test("native TUI gateway uses private IPC and retains Jev control and approval d
     assert.deepEqual(
       notices.map((x) => x.params.run.entries[0].text),
       [
-      "Jev mode: ADAPTIVE | Permissions: readOnly | Require Jev: off",
         "Astra set to LOW effort (Jev)",
         "Astra changed to HIGH effort (Jev)",
       ],
@@ -370,8 +406,6 @@ test("deferred resume lets Codex inspect candidates and opens only the selected 
         cwd: "/project",
         model: "gpt-6-astra",
         config: { web_search: "disabled" },
-        sandbox: "read-only",
-        approvalPolicy: "never",
       },
     );
     assert.match(
@@ -388,7 +422,7 @@ test("deferred resume lets Codex inspect candidates and opens only the selected 
   }
 });
 
-test("reattaching the owned resumed thread retains the configured workspace scope", async () => {
+test("reattaching the owned resumed thread preserves the native current permissions", async () => {
   const calls = [];
   const scope = {
     "sandbox_workspace_write.writable_roots": [],
@@ -439,10 +473,17 @@ test("reattaching the owned resumed thread retains the configured workspace scop
     {
       method: "thread/resume",
       params: {
-        ...session.threadOptions,
         threadId: "owned",
         model: "gpt-6-sol",
-        config: { web_search: "disabled", ...scope },
+        cwd: "/elsewhere",
+        sandbox: "danger-full-access",
+        permissions: "full",
+        runtimeWorkspaceRoots: ["/elsewhere"],
+        config: {
+          web_search: "disabled",
+          "sandbox_workspace_write.network_access": true,
+          "sandbox_workspace_write.writable_roots": ["/elsewhere"],
+        },
       },
     },
   ]);

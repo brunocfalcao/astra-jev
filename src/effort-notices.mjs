@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { modeLabel } from "./status.mjs";
 
 // A display-only projection of real controller decisions. Stock 0.157.1's
 // completed-hook system-message renderer gives these a durable, neutral row.
@@ -10,7 +9,7 @@ export class EffortNotices {
     Object.assign(this, { session, emit, verbose });
     this.captured = session.controller?.capturedEffort ?? null;
     this.inactive = session.mode === "inactive";
-    this.resumeExplained = false;
+    this.selected = null;
   }
   handle(event) {
     if (event.threadId !== this.session.threadId) return;
@@ -18,6 +17,7 @@ export class EffortNotices {
       this.pending = null;
       this.evaluation = null;
       this.captured = null;
+      this.selected = null;
       const alreadyInactive = this.inactive;
       this.inactive = event.mode === "inactive";
       if (this.inactive && alreadyInactive) return;
@@ -34,8 +34,6 @@ export class EffortNotices {
     if (event.type === "turn_preparing") {
       this.pending = null;
       this.evaluation = null;
-      if (this.session.mode && this.session.mode !== "inactive")
-        this.show(event, "mode", modeLabel(this.session.status()));
     }
     if (event.type === "evaluation_requested") this.evaluation = event;
     if (event.type === "decision_selected") {
@@ -46,26 +44,15 @@ export class EffortNotices {
         return;
       const decision = { ...event, startedAt: this.evaluation?.time };
       if (!this.session.controller.captureEvents) {
-        if (this.verbose && !this.resumeExplained) {
-          this.resumeExplained = true;
-          this.show(
-            decision,
-            "resume",
-            "Resumed session: Jev chooses effort before each message. Codex cannot confirm the effort used here; mid-reply Jev changes are unavailable.",
-          );
-        }
+        if (this.selected === event.effort) return;
+        this.selected = event.effort;
         this.show(
           decision,
           "selected",
           `Jev selected ${event.effort.toUpperCase()} effort for this turn`,
         );
-      } else if (event.effort === this.captured) {
-        this.show(
-          decision,
-          "kept",
-          `Astra kept ${event.effort.toUpperCase()} effort (Jev)`,
-        );
-      } else this.pending = decision;
+      } else if (event.effort !== this.captured) this.pending = decision;
+      else this.pending = null;
     }
     if (event.type === "effort_captured") {
       const previous = this.captured;
@@ -89,6 +76,7 @@ export class EffortNotices {
       }
     }
     if (event.type === "evaluation_failed") {
+      this.selected = null;
       this.show(
         { ...this.evaluation, ...event },
         "unavailable",
@@ -121,11 +109,7 @@ export class EffortNotices {
   show(decision, outcome, message) {
     // Quiet mode affects presentation only. Keep model transitions and failures
     // visible; controller decisions and captured effort still reach status/logs.
-    if (
-      !this.verbose &&
-      (decision.type === "turn_preparing" ||
-        ["set", "changed", "kept", "selected"].includes(outcome))
-    )
+    if (!this.verbose && ["set", "changed", "selected"].includes(outcome))
       return;
     const now = Date.now();
     const started = Date.parse(decision.startedAt ?? decision.time);

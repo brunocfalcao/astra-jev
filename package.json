@@ -1,6 +1,6 @@
 {
   "name": "astra-jev",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "type": "module",
   "bin": {
     "astra-jev": "bin/astra-jev.mjs",
@@ -40,7 +40,8 @@
     "CONTRIBUTING.md",
     "assets/icon.svg",
     "assets/banner.svg",
-    "assets/logo.svg"
+    "assets/logo.svg",
+    "skills/astra-jev/SKILL.md"
   ],
   "repository": {
     "type": "git",

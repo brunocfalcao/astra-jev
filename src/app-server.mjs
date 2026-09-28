@@ -37,10 +37,6 @@ export class AppServer extends EventEmitter {
       "step_model_switching",
       "--enable",
       "reasoning_effort_override",
-      "--disable",
-      "shell_snapshot",
-      "--disable",
-      "shell_snapshot_v2",
     ];
     for (const c of this.config) args.push("-c", c);
     const env = { ...process.env };

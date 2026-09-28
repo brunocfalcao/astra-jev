@@ -12,6 +12,6 @@ The macOS beta and its documented Codex version are the validation target. No in
 
 ## Boundaries
 
-The wrapper does not patch Codex, disable endpoint protection, expose TCP listeners, install a daemon or bypass native approval/trust controls. IPC directories and sockets are owner-only. Unknown Codex options are passed to stock Codex with an explicit Jev-inactive notice; `requireJev` can prohibit fallback. Managed resumed sessions default to read-only; explicit `resumePermissions: "codex"` delegates permissions to Codex. Project JSON is trusted configuration, not a security boundary against the account that owns the project.
+The wrapper does not patch Codex, disable endpoint protection, expose TCP listeners, install a daemon or bypass native approval/trust controls. IPC directories and sockets are owner-only. Unknown Codex options are passed to stock Codex with an explicit Jev-inactive notice; `requireJev` can prohibit fallback. Filesystem, network and approval policy are owned by Codex for fresh and resumed sessions. Astra-Jev forwards native permissions without introducing its own policy. Project JSON is trusted configuration, not a security boundary against the account that owns the project.
 
 Jev receives selected context over TLS. Redaction is imperfect; see PRIVACY.md. Hook failures interrupt the managed turn, but an interruption cannot undo a generation that already started or guarantee coverage of tools that do not expose checkpoints. Dependencies and published artifacts require continuing review.

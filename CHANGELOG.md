@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.0.6 — 2026-09-28
+
+- Add the bundled `$astra-jev` Codex skill for project configuration, doctor checks and live status. Setup and managed launches install it automatically; custom copies and edits are preserved.
+- Add `astra-jev-control config`, `config set KEY VALUE`, and `install-skill` for validated settings and skill installation without provider calls.
+- Remove per-turn mode/permission banners and resume explanations from the TUI. Show initial effort choices and changes; unchanged choices stay silent. Model transitions and failures remain visible.
+- Remove wrapper-owned sandbox, network, approval and writable-directory overrides. Fresh and resumed sessions use native Codex permissions; Jev only chooses Astra effort.
+- Stop overriding shell-snapshot and terminal-rendering defaults. Direct launches forward native arguments unchanged.
+- Retire `resumePermissions` and `noAltScreen`; older project files remain readable, with those fields ignored. Use native Codex settings and `--no-alt-screen` when desired.
+- Preserve native permission changes through turns, model switches, settings updates and reconnections.
+
+**Upgrade:** restart Astra-Jev to load the changes. Native Codex permissions now apply, including full access when that is already your Codex setting. Existing project files are preserved. This remains a macOS beta; fresh-machine authentication testing is pending.
+
 ## 0.0.5 — 2026-09-28
 
 ### Features

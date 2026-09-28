@@ -27,6 +27,7 @@ const expected = new Set([
   "docs/RELEASING.md",
   "docs/DEMO.md",
   "examples/astra-jev.json",
+  "skills/astra-jev/SKILL.md",
   ...["astra-jev.mjs", "astra-jev-control.mjs", "hook-mcp.mjs"].map(
     (x) => `bin/${x}`,
   ),

@@ -10,7 +10,7 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const scratch = await mkdtemp(join(tmpdir(), "astra-install-"));
@@ -62,9 +62,11 @@ try {
     /codex-cli fixture/,
   );
   assert.equal(
-    JSON.parse(await readFile(join(workspace, "astra-jev.json"), "utf8"))
-      .resumePermissions,
-    "read-only",
+    Object.hasOwn(
+      JSON.parse(await readFile(join(workspace, "astra-jev.json"), "utf8")),
+      "resumePermissions",
+    ),
+    false,
   );
   assert.match(
     run(join(prefix, "bin/astra-jev-control"), ["--help"], {
@@ -73,6 +75,25 @@ try {
     }).stdout,
     /astra-jev-control/,
   );
+  const skillDirectory = join(scratch, "skills/astra-jev");
+  const installedRoot = join(prefix, "lib/node_modules/astra-jev");
+  const { installSkill } = await import(
+    pathToFileURL(join(installedRoot, "src/skill.mjs"))
+  );
+  assert.equal(
+    (await installSkill({ directory: skillDirectory })).status,
+    "installed",
+  );
+  assert.equal(
+    await readFile(join(skillDirectory, "SKILL.md"), "utf8"),
+    await readFile(join(installedRoot, "skills/astra-jev/SKILL.md"), "utf8"),
+  );
+  const configured = run(
+    join(prefix, "bin/astra-jev-control"),
+    ["config", "set", "verbose", "false"],
+    { cwd: workspace, env },
+  );
+  assert.equal(JSON.parse(configured.stdout).settings.verbose, false);
   const settingsPath = join(workspace, "astra-jev.json");
   const settings = JSON.parse(await readFile(settingsPath, "utf8"));
   const customized =
@@ -88,6 +109,10 @@ try {
     /codex-cli fixture/,
   );
   assert.equal(await readFile(settingsPath, "utf8"), customized);
+  assert.equal(
+    (await installSkill({ directory: skillDirectory })).status,
+    "current",
+  );
   run("npm", [
     "uninstall",
     "--global",
@@ -102,7 +127,7 @@ try {
   });
   assert.equal(await readFile(settingsPath, "utf8"), customized);
   console.log(
-    "Isolated-prefix install, reinstall, both commands and uninstall passed; project settings preserved.",
+    "Isolated-prefix install, bundled skill, config CLI, reinstall, both commands and uninstall passed; project settings preserved.",
   );
 } finally {
   await rm(scratch, { recursive: true, force: true });

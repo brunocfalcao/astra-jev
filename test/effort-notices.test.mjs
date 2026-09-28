@@ -28,7 +28,7 @@ function setup({ captureEvents = true, verbose = true } = {}) {
   return { notices, messages, event, select, capture, text };
 }
 
-test("native effort notices require capture and report every unchanged Jev decision once", () => {
+test("native effort notices require capture and keep unchanged Jev decisions silent", () => {
   const { messages, event, select, capture, text } = setup();
   event("turn_preparing");
   select("low");
@@ -54,11 +54,8 @@ test("native effort notices require capture and report every unchanged Jev decis
   assert.deepEqual(text(), [
     "Astra changed to LOW effort (Jev)",
     "Astra changed to MEDIUM effort (Jev)",
-    "Astra kept MEDIUM effort (Jev)",
-    "Astra kept MEDIUM effort (Jev)",
-    "Astra kept MEDIUM effort (Jev)",
   ]);
-  assert.equal(new Set(messages.map((m) => m.params.run.id)).size, 5);
+  assert.equal(new Set(messages.map((m) => m.params.run.id)).size, 2);
   assert.ok(
     messages.every(
       (m) =>
@@ -86,8 +83,10 @@ test("initial, resumed and late captures preserve their evidence level", () => {
   resumed.event("turn_preparing");
   resumed.select("low");
   resumed.event("turn_completed");
+  resumed.event("turn_preparing");
+  resumed.select("low");
+  resumed.event("turn_completed");
   assert.deepEqual(resumed.text(), [
-    "Resumed session: Jev chooses effort before each message. Codex cannot confirm the effort used here; mid-reply Jev changes are unavailable.",
     "Jev selected HIGH effort for this turn",
     "Jev selected LOW effort for this turn",
   ]);
@@ -150,4 +149,34 @@ test("quiet notices suppress routine decisions while retaining failure evidence"
   resumed.select("high");
   resumed.event("turn_completed");
   assert.deepEqual(resumed.text(), []);
+});
+
+test("normal turns never emit mode or permission banners", () => {
+  const messages = [];
+  const session = {
+    threadId: "owned",
+    mode: "turn-only-resume",
+    controller: { captureEvents: false, supportedEfforts: ["medium"] },
+    status: () => ({
+      mode: "turn-only-resume",
+      policy: "auto",
+      sandbox: "dangerFullAccess",
+    }),
+  };
+  const notices = new EffortNotices({
+    session,
+    emit: (message) => messages.push(message.params.run.entries[0].text),
+  });
+  for (let turn = 0; turn < 3; turn++) {
+    notices.handle({ type: "turn_preparing", threadId: "owned" });
+    notices.handle({
+      type: "decision_selected",
+      threadId: "owned",
+      effort: "medium",
+      targetGeneration: 1,
+      evaluatedModel: "jev-fixture",
+    });
+    notices.handle({ type: "turn_completed", threadId: "owned" });
+  }
+  assert.deepEqual(messages, ["Jev selected MEDIUM effort for this turn"]);
 });

@@ -2,14 +2,6 @@ import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
 
-// Process-local defaults; caller arguments remain later in the native argv.
-export const snapshotDefaults = [
-  "-c",
-  "features.shell_snapshot=false",
-  "-c",
-  "features.shell_snapshot_v2=false",
-];
-
 const commands = new Set(
   "agents exec e review login logout mcp plugin app-server remote-control app completion update doctor sandbox debug apply a resume queue archive delete migrate-rollouts unarchive fork cloud exec-server features help".split(
     " ",
@@ -128,9 +120,12 @@ export function planLaunch(args, cwd = process.cwd()) {
       if (/^(permissions|sandbox|approval|approvals)/.test(key))
         permissionOverride = true;
       // Do not silently override explicit settings that conflict with Jev's
-      // model, effort, checkpoint or process-local snapshot requirements.
+      // model, effort or checkpoint requirements.
       if (
-        /^(model|features|hooks|mcp_servers|shell_snapshot)/.test(key) ||
+        (/^(model|features|hooks|mcp_servers)/.test(key) &&
+          !["features.shell_snapshot", "features.shell_snapshot_v2"].includes(
+            key,
+          )) ||
         /["']/.test(key)
       )
         reason = "configuration requires stock Codex ownership";
@@ -138,13 +133,9 @@ export function planLaunch(args, cwd = process.cwd()) {
     if (["--enable", "--disable"].includes(name) && value) {
       config.push(`features.${value}=${name === "--enable"}`);
       if (
-        [
-          "shell_snapshot",
-          "shell_snapshot_v2",
-          "step_model_switching",
-          "reasoning_effort_override",
-          "hooks",
-        ].includes(value)
+        ["step_model_switching", "reasoning_effort_override", "hooks"].includes(
+          value,
+        )
       )
         reason = "feature changes Jev's required runtime";
     }

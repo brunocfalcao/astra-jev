@@ -113,10 +113,7 @@ test("real JSONL process preserves Astra, streams output, observes effort change
     );
     assert.ok(invocation.args.includes("stdio://"));
     for (const feature of ["shell_snapshot", "shell_snapshot_v2"])
-      assert.equal(
-        invocation.args[invocation.args.indexOf(feature) - 1],
-        "--disable",
-      );
+      assert.equal(invocation.args.includes(feature), false);
     assert.equal(invocation.options.shell, false);
     assert.equal(invocation.options.env.TYPESAFE_API_KEY, undefined);
   } finally {

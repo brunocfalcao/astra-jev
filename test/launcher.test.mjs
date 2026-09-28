@@ -5,12 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { projectConfig, defaults } from "../src/project-config.mjs";
-import {
-  planLaunch,
-  runCodex,
-  exitCode,
-  snapshotDefaults,
-} from "../src/codex-launch.mjs";
+import { planLaunch, runCodex, exitCode } from "../src/codex-launch.mjs";
 
 test("project config creates defaults once and preserves existing and invalid files", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "astra-config-"));
@@ -68,29 +63,34 @@ test("project verbosity defaults on, accepts quiet mode and rejects non-booleans
   }
 });
 
-test("project resume policy defaults read-only and accepts scoped writes explicitly", async () => {
-  const cwd = await mkdtemp(join(tmpdir(), "astra-resume-config-"));
+test("project settings omit permissions and accept obsolete resume modes without applying them", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "astra-native-config-"));
   const path = join(cwd, "astra-jev.json");
   try {
-    assert.equal((await projectConfig(cwd)).resumePermissions, "read-only");
-    for (const resumePermissions of ["read-only", "workspace-write", "codex"]) {
-      const contents = JSON.stringify({ resumePermissions });
-      await writeFile(path, contents);
-      assert.equal(
-        (await projectConfig(cwd)).resumePermissions,
-        resumePermissions,
-      );
-      assert.equal(await readFile(path, "utf8"), contents);
-    }
-    for (const resumePermissions of [
-      "danger-full-access",
-      null,
+    assert.equal(
+      Object.hasOwn(await projectConfig(cwd), "resumePermissions"),
       false,
-      [],
-      {},
-    ]) {
-      await writeFile(path, JSON.stringify({ resumePermissions }));
-      await assert.rejects(projectConfig(cwd), /Invalid astra-jev.json/);
+    );
+    assert.equal(Object.hasOwn(await projectConfig(cwd), "noAltScreen"), false);
+    assert.equal(
+      Object.hasOwn(
+        JSON.parse(await readFile(path, "utf8")),
+        "resumePermissions",
+      ),
+      false,
+    );
+    for (const resumePermissions of ["read-only", "workspace-write", "codex"]) {
+      const contents = JSON.stringify({
+        resumePermissions,
+        noAltScreen: true,
+        verbose: false,
+      });
+      await writeFile(path, contents);
+      assert.deepEqual(await projectConfig(cwd), {
+        ...defaults,
+        verbose: false,
+      });
+      assert.equal(await readFile(path, "utf8"), contents);
     }
   } finally {
     await rm(cwd, { recursive: true, force: true });
@@ -106,6 +106,7 @@ test("launch routing preserves prompts, resume syntax and Codex option boundarie
     ["--", "resume"],
     ["-i", "resume", "a prompt"],
     ["--model=gpt-6-astra", "--sandbox=read-only", "prompt"],
+    ["--enable", "shell_snapshot"],
   ]) {
     const original = [...args];
     const plan = planLaunch(args, "/project");
@@ -137,7 +138,6 @@ test("launch routing preserves prompts, resume syntax and Codex option boundarie
     ["--remote", "unix:///elsewhere"],
     ["--add-dir", "/other"],
     ["resume", "--last", "-s", "read-only"],
-    ["--enable", "shell_snapshot"],
     ["-c", "features={hooks=false}"],
   ]) {
     assert.equal(planLaunch(args).direct, true, JSON.stringify(args));
@@ -224,7 +224,7 @@ test("installed entry point creates project JSON and forwards native commands wi
         }),
       );
       assert.deepEqual(JSON.parse(await readFile(capture, "utf8")), {
-        args: [...snapshotDefaults, ...args],
+        args,
         hasKey: false,
       });
       assert.match(result.stderr, /Jev inactive/);

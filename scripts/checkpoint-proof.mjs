@@ -1,11 +1,5 @@
 import assert from "node:assert/strict";
-import {
-  mkdtempSync,
-  writeFileSync,
-  readFileSync,
-  readdirSync,
-  existsSync,
-} from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -82,21 +76,9 @@ const session = new Session({
       : "Synthetic local test. Read only the two requested fixture files with native shell tools and use the requested execution order. No other tools or delegation.",
   },
 });
-let timeout, info, snapshotSettings, snapshotFiles;
+let timeout, info;
 try {
   info = await session.open();
-  const effective = await session.transport.request("config/read", {
-    includeLayers: false,
-    cwd: workspace,
-  });
-  snapshotSettings = {
-    shell_snapshot: effective.config.features?.shell_snapshot,
-    shell_snapshot_v2: effective.config.features?.shell_snapshot_v2,
-  };
-  assert.deepEqual(snapshotSettings, {
-    shell_snapshot: false,
-    shell_snapshot_v2: false,
-  });
   timeout = setTimeout(() => {
     void session.interrupt();
   }, 65000);
@@ -112,13 +94,6 @@ try {
       toolFailure ? "FAILURE_OK" : complex ? "TRANSITION_OK" : "ALPHA BETA",
     ),
   );
-  const snapshotDirectory = join(homedir(), ".codex/shell_snapshots");
-  snapshotFiles = existsSync(snapshotDirectory)
-    ? readdirSync(snapshotDirectory).filter((name) =>
-        name.startsWith(info.threadId + "."),
-      )
-    : [];
-  assert.equal(snapshotFiles.length, 0);
   assert.ok(
     records.some((x) => x.type === "checkpoint_released"),
     "Native hooks must actually run",
@@ -163,8 +138,6 @@ try {
         workspace,
         info,
         passed: !process.exitCode,
-        snapshotSettings,
-        snapshotFiles,
         records,
         notices,
       },

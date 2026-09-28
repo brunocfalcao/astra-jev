@@ -143,12 +143,9 @@ test("Astra to Sol to Astra preserves the thread, native effort and permissions 
     assert.equal(sent.model, "gpt-6-sol");
     assert.equal(sent.effort, "medium");
     assert.deepEqual(sent.input, native.input);
-    assert.deepEqual(sent.sandboxPolicy, {
-      type: "readOnly",
-      networkAccess: false,
-    });
-    assert.equal(sent.approvalPolicy, "never");
-    assert.equal(sent.permissions, undefined);
+    assert.deepEqual(sent.sandboxPolicy, native.sandboxPolicy);
+    assert.equal(sent.approvalPolicy, undefined);
+    assert.deepEqual(sent.permissions, native.permissions);
     const decisions = f.records.filter(
       (r) => r.type === "decision_selected",
     ).length;
@@ -290,10 +287,7 @@ test("resumed and fixed sessions restore their original Astra policy after a mod
         .at(-1).params;
       assert.equal(sent.effort, policy === "fixed" ? "high" : "low");
       if (policy === "resume") {
-        assert.deepEqual(sent.sandboxPolicy, {
-          type: "readOnly",
-          networkAccess: false,
-        });
+        assert.equal(sent.sandboxPolicy, undefined);
         assert.equal(f.session.controller.captureEvents, false);
         assert.equal(f.session.status().capturedEffort, null);
       }
