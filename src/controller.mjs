@@ -41,7 +41,7 @@ export class Controller {
       [1, 2, 5, 10].includes(d.leaseSteps)
     );
   }
-  async begin({ threadId, prompt, defaultEffort, imageCount = 0 }) {
+  async begin({ threadId, prompt, defaultEffort, imageCount = 0, checkpointEvent }) {
     this.abort?.abort();
     this.revision++;
     this.abort = new AbortController();
@@ -66,6 +66,7 @@ export class Controller {
     if (continuing) this.context.nextTurn(prompt);
     else this.context.reset(prompt);
     this.context.imageCount = imageCount;
+    if (checkpointEvent) this.context.addHook(checkpointEvent);
     this.log("turn_preparing");
     let decision;
     try {

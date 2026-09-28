@@ -35,7 +35,7 @@ astra-jev resume --last  # Continue the last conversation
 
 Work normally in Codex. Jev adapts Astra's effort at supported local-tool checkpoints. In the resume picker, Enter resumes; Esc starts fresh.
 
-Use `/model` to switch models. Jev pauses for other models and resumes when you return to Astra. Codex keeps control of permissions.
+Use `/model` to switch models. Jev pauses for other models. When you switch from another model to Astra during a turn, Jev joins at the next supported local-tool checkpoint; an already-running generation finishes first. Without another checkpoint, it starts next turn. Codex keeps control of permissions.
 
 Routine effort changes stay quiet. Model transitions and evaluator failures remain visible; decisions remain available in status and logs.
 
@@ -59,7 +59,7 @@ astra-jev-control status --table
 
 `high` fixes Astra's effort; `null` restores Jev. Restart for settings to take effect. Run the usage table from the same project folder you launched in. It shows recorded tokens for adaptive Jev, fixed effort and other models, without contacting providers.
 
-**Experimental:** adaptation does not guarantee lower costs or better answers. Resumed sessions adapt at supported checkpoints, but native effort capture and Astra token counts are unavailable. Incomplete usage totals are lower bounds.
+**Experimental:** adaptation does not guarantee lower costs or better answers. Resumed sessions adapt at supported checkpoints, but native effort capture and Astra token counts are unavailable. A turn joined mid-flight also has incomplete capture and token counts; Jev reassesses each remaining checkpoint. Incomplete usage totals are lower bounds.
 
 ## Details and troubleshooting
 

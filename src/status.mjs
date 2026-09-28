@@ -56,6 +56,8 @@ export class Status {
         jev: event.mode === "inactive" ? "inactive" : "not checked",
         lastError: null,
       });
+    if (event.type === "midturn_astra_joined")
+      Object.assign(v, { captureAvailable: false, selectedEffort: event.effort, phase: "running", jev: event.jev });
     if (event.type === "policy_changed") v.policy = event.policy;
     if (event.type === "turn_preparing")
       Object.assign(v, {
@@ -166,7 +168,7 @@ export function statusLines(s) {
     s.mode === "inactive"
       ? "inactive for selected model"
       : captureUnavailable
-        ? "unverified on resumed thread"
+        ? "unverified for this turn"
         : (s.capturedEffort ?? "awaiting native capture");
   return [
     `Astra + Jev | ${s.phase} | ${s.live === true ? "live host" : s.live === false ? "recorded, not a liveness check" : "current session"}`,
@@ -181,7 +183,7 @@ export function statusLines(s) {
       : []),
     `This turn: ${captureUnavailable ? "generation count unavailable" : `${s.generations} generations`} | Session: ${s.checkpoints} checkpoints, ${s.evaluations} Jev decisions`,
     captureUnavailable
-      ? "Native capture and token counts unavailable on resumed threads"
+      ? "Native capture and token counts unavailable for this turn"
       : `Captured Astra tokens: ${s.inputTokens} input (${s.cachedInputTokens} cached), ${s.outputTokens} output`,
     s.jevAccounting
       ? `Jev totals: ${s.jevInputTokens} input, ${s.jevOutputTokens} output tokens | ${s.jevRequests} evaluations, ${s.jevAttemptsTotal} HTTP attempts, ${s.jevRetries} retries, ${s.jevFailures} failures | ${s.jevElapsedMs} ms cumulative evaluation time${s.jevUnknownUsage || s.jevUnknownAttempts ? " | usage/attempt totals incomplete" : ""}`

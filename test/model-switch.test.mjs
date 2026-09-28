@@ -502,3 +502,33 @@ test("completion delivered before the turn-start continuation cannot restore a f
     }
   }
 });
+
+for (const resume of [false, true]) {
+  test(`Sol to Astra joins the running turn at its checkpoint (${resume ? 'resume' : 'fresh'})`, async () => {
+    const f = fixture();
+    let reached, release;
+    const ready = new Promise(r => reached = r);
+    const held = new Promise(r => release = r);
+    const checkpoint = f.session.checkpoint.bind(f.session);
+    f.session.checkpoint = async (...args) => {
+      reached();
+      await held;
+      return checkpoint(...args);
+    };
+    try {
+      await f.open(resume ? { resume: 'thread-checkpoint' } : {});
+      const running = f.turn({ model: 'gpt-6-sol', effort: 'medium' });
+      await ready;
+      assert.equal(f.states.length, 0);
+      await f.rpc('thread/settings/update', { threadId: f.session.threadId, model: 'gpt-6-astra' });
+      release();
+      assert.equal((await running).status, 'completed');
+      assert.ok(f.states.length > 0);
+      assert.equal(f.session.status().captureAvailable, false);
+      assert.equal(f.states[0].latestUserPrompt, 'Synthetic prompt');
+      assert.ok(f.states[0].recentToolCalls.length > 0);
+      assert.ok(f.requests.some(r => r.method === 'turn/settings/update' && r.params.model === 'gpt-6-astra'));
+      assert.equal(f.session.mode, resume ? 'adaptive-resume' : 'adaptive-checkpoint');
+    } finally { release?.(); await f.close(); }
+  });
+}

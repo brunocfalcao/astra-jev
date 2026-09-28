@@ -77,6 +77,7 @@ export async function projectTotals(
                 : "fixed"
           ];
         group.sessions.add(name);
+        if (e.type === "midturn_astra_joined") group.incomplete = true;
         if (e.type === "turn_preparing") {
           active = true;
           if (

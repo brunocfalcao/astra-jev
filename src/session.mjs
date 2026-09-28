@@ -276,6 +276,10 @@ export class Session {
     this.running = true;
     try {
       const input = params.input ?? [];
+      this.activeInput = input;
+      this.controller.captureEvents = !this.resumed;
+      this.joinedMidturn = false;
+      this.statusTracker.value.captureAvailable = !this.resumed;
       for (const image of input.filter((x) => x.type === "localImage"))
         if (!(await stat(image.path)).isFile())
           throw new Error("Image attachment is not a file");
@@ -331,6 +335,8 @@ export class Session {
   }
   async steerTurn(params) {
     const result = await this.transport.request("turn/steer", params);
+    if (this.running && result.turnId === this.turnId)
+      this.activeInput = [...(this.activeInput ?? []), ...(params.input ?? [])];
     const acceptedTurnId = result.turnId;
     // Completion or a new turn can race this acknowledgement. Do not revive
     // an old controller or apply old input to its replacement.
@@ -371,7 +377,13 @@ export class Session {
   }
   async updateSettings(params) {
     this.requireSupportedSelection(this.requestedModel(params));
-    return this.transport.request("thread/settings/update", params);
+    const turnId = this.turnId;
+    const result = await this.transport.request("thread/settings/update", params);
+    // Native thread settings affect future turns. Join an active Sol turn only
+    // at a supported checkpoint, where its continuation can be held safely.
+    if (this.running && this.turnId === turnId && this.mode === "inactive")
+      this.pendingAstra = this.requestedModel(params) === "gpt-6-astra";
+    return result;
   }
   selectModel(model) {
     this.selectedModel = model;
@@ -421,6 +433,7 @@ export class Session {
       await this.failCheckpoint();
       return;
     }
+    if (this.joinedMidturn && method.startsWith("rawResponse")) return;
     if (this.controller && this.mode !== "inactive")
       await this.controller.handle(method, p);
     if (
@@ -453,6 +466,8 @@ export class Session {
       this.waiter?.resolve(p.turn);
       this.running = false;
       this.turnId = null;
+      this.activeInput = null;
+      this.pendingAstra = false;
       if (this.selectedModel) this.selectModel(this.selectedModel);
     }
   }
@@ -511,7 +526,13 @@ export class Session {
   async checkpoint(event, options) {
     // The native relay stays attached so Astra can resume later. Other models
     // pass through without retaining their content or contacting the evaluator.
-    if (this.mode === "inactive") return;
+    if (this.mode === "inactive") {
+      if (!this.pendingAstra || event?.session_id !== this.threadId ||
+          event?.turn_id !== this.turnId || !this.running) return;
+      if (this.joiningAstra) return this.joiningAstra;
+      this.joiningAstra = this.joinAstra(event).finally(() => { this.joiningAstra = null; });
+      return this.joiningAstra;
+    }
     // Stock child threads inherit the parent's config, including this hook.
     // This controller owns one thread: don't alter another thread's result or
     // send its content to Jev simply because it inherited our local relay.
@@ -532,6 +553,43 @@ export class Session {
       return;
     }
     return this.controller.checkpoint(event, options);
+  }
+  async joinAstra(event) {
+    const turnId = this.turnId;
+    const input = this.activeInput ?? [];
+    // The first half of this turn had no controller capture stream. Reassess
+    // every checkpoint for its remainder instead of inventing a generation lease.
+    this.controller.captureEvents = false;
+    const effort = await this.controller.begin({
+      threadId: this.threadId,
+      prompt: input.filter(x => x.type === "text").map(x => x.text).join("\n"),
+      imageCount: input.filter(x => ["image", "localImage"].includes(x.type)).length,
+      defaultEffort: this.model.defaultReasoningEffort,
+      checkpointEvent: event,
+    });
+    if (!this.running || this.turnId !== turnId || !this.pendingAstra) {
+      this.controller.stop();
+      return;
+    }
+    this.controller.attach(turnId);
+    try {
+      const result = await this.transport.request("turn/settings/update", {
+        threadId: this.threadId, turnId, model: "gpt-6-astra", effort,
+      }, { timeoutMs: 4000 });
+      if (result.status !== "applied") throw new Error("Active model switch was not applied");
+      if (!this.running || this.turnId !== turnId) return;
+      this.pendingAstra = false;
+      this.joinedMidturn = true;
+      this.mode = this.fixedEffort ? "fixed" : this.resumed ? "adaptive-resume" : "adaptive-checkpoint";
+      const jevState = this.status().jev;
+      this.record({ time: new Date().toISOString(), type: "model_changed",
+        threadId: this.threadId, model: "gpt-6-astra", mode: this.mode });
+      this.record({ time: new Date().toISOString(), type: "midturn_astra_joined",
+        threadId: this.threadId, turnId, effort, jev: jevState });
+    } catch (error) {
+      await this.interrupt();
+      throw error;
+    }
   }
   async close() {
     if (this.closed) return;

@@ -3,6 +3,7 @@
 ## 1.0.1-rc.1 — 2026-09-28
 
 ### Features
+- [NEW FEATURE] Activate Jev at the next supported checkpoint when switching an active non-Astra turn to Astra.
 - [NEW FEATURE] Add cumulative project usage tables and complete paired benchmark comparisons including Jev overhead.
 
 ### Improvements
