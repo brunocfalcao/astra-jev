@@ -41,6 +41,9 @@ astra-jev-control doctor
 
 Git is required for this source installation. The macOS CI badge links to the exact checks and results; a clean-Mac trial remains pending.
 
+> [!WARNING]
+> **Long home-directory paths can prevent startup.** Managed TUI sessions and named hosts create a Unix socket under `~/.local/share/astra-jev/run/`. On macOS, the complete socket path must fit within **103 bytes**. Long usernames or deeply nested home directories can trigger `Session socket path is too long`; the affected launch stops before any model turn. This beta has no setting for a shorter socket directory yet. Moving your project does not shorten this home-based path. If affected, [report the error](https://github.com/brunocfalcao/astra-jev/issues/new/choose) with your home-path byte length, without sharing private paths or credentials.
+
 `setup` explains the data flow, asks for acknowledgment, and can securely store a key using hidden terminal input. It never displays the key. An existing `TYPESAFE_API_KEY` environment variable also works. Read [privacy](PRIVACY.md) before using confidential projects.
 
 In a project folder:

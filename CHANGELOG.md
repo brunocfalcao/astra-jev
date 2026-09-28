@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.2-beta.1 — 2026-09-28
+
+### Improvements
+- [IMPROVED] Warn during installation guidance about long home paths, the macOS socket limit and the startup error.
+
 ## 0.4.1-beta.1 — 2026-09-28
 
 ### Features
