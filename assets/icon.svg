@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Astra-Jev</title>
+  <desc id="desc">A mint letter A with a coral effort marker on a dark ink square.</desc>
+  <rect width="128" height="128" rx="28" fill="#102A2C"/>
+  <path d="M30 95 60 29Q64 21 68 29L98 95" fill="none" stroke="#C5F5DA" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M46 73H82" stroke="#C5F5DA" stroke-width="9" stroke-linecap="round"/>
+  <path d="M29 105H52M60 105H76" stroke="#486467" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="85" cy="73" r="11" fill="#F58C70" stroke="#102A2C" stroke-width="5"/>
+</svg>

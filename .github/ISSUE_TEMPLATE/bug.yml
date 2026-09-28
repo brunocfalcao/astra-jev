@@ -1,0 +1,31 @@
+name: Bug report
+description: Report a reproducible problem without private logs or credentials.
+body:
+  - type: markdown
+    attributes:
+      value: 'For security issues, use SECURITY.md. Never paste API keys, private source, raw sessions or full environment dumps.'
+  - type: input
+    id: versions
+    attributes:
+      label: macOS, Node, Codex and Astra-Jev versions
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Displayed Jev mode
+      options: [ADAPTIVE, PER-TURN, FIXED, INACTIVE, Not reached]
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal synthetic reproduction
+      description: Include sanitized arguments/settings and expected versus actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized error or decision evidence
+      description: Review paths, IDs and contents before sharing; do not attach raw logs.

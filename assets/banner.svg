@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">Astra-Jev — reasoning effort, in motion.</title>
+  <desc id="desc">Stock Codex. Visible decisions. A macOS beta with an illustrative six-level effort selector set to High.</desc>
+  <rect width="1200" height="420" rx="20" fill="#F5F3EA"/>
+  <g transform="translate(58 53) scale(.62)">
+    <rect width="128" height="128" rx="28" fill="#102A2C"/>
+    <path d="M30 95 60 29Q64 21 68 29L98 95M46 73H82" fill="none" stroke="#C5F5DA" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="85" cy="73" r="11" fill="#F58C70" stroke="#102A2C" stroke-width="5"/>
+  </g>
+  <!-- Original geometric wordmark, drawn as paths rather than embedded font glyphs. -->
+  <g transform="translate(165 66)" fill="none" stroke="#102A2C" stroke-width="6" stroke-linecap="square" stroke-linejoin="round">
+    <path d="M0 48 18 0 36 48M7 32H29"/>
+    <path d="M83 3H59Q51 3 51 13Q51 23 61 24L74 26Q84 27 84 37Q84 47 75 47H51"/>
+    <path d="M100 2H138M119 2V48"/>
+    <path d="M154 48V2H174Q188 2 188 15Q188 28 174 28H154M174 28 191 48"/>
+    <path d="M207 48 225 0 243 48M214 32H236"/>
+    <path d="M260 26H276" stroke="#9BACA3"/>
+    <path d="M321 2V34Q321 48 308 48Q295 48 295 35"/>
+    <path d="M369 2H342V48H369M342 24H365"/>
+    <path d="M386 2 404 49 422 2"/>
+  </g>
+  <g font-family="Avenir Next, Avenir, sans-serif" fill="#102A2C">
+    <text x="58" y="214" font-size="43" font-weight="500" letter-spacing="-1">Reasoning effort,</text>
+    <text x="58" y="266" font-size="43" font-weight="500" letter-spacing="-1">in motion.</text>
+    <text x="60" y="313" font-size="20" fill="#45615C">Stock Codex. Visible decisions.</text>
+    <text x="60" y="373" font-size="14" font-weight="600" letter-spacing="1.5">MACOS BETA</text>
+    <circle cx="189" cy="368" r="3" fill="#6A8078"/>
+    <text x="207" y="373" font-size="14" letter-spacing="1.1" fill="#45615C">ASTRA + JEV</text>
+  </g>
+  <rect x="708" y="42" width="442" height="336" rx="16" fill="#102A2C"/>
+  <g font-family="Avenir Next, Avenir, sans-serif">
+    <text x="743" y="89" font-size="20" font-weight="600" fill="#F5F3EA">The next step, considered.</text>
+    <path d="M744 109H1114" stroke="#365153"/>
+    <g font-size="14" fill="#BDD2C9">
+      <text x="746" y="144">LOW</text><text x="746" y="176">MEDIUM</text>
+      <text x="746" y="240">XHIGH</text><text x="746" y="272">MAX</text><text x="746" y="304">ULTRA</text>
+    </g>
+    <g stroke="#49676A" stroke-width="7" stroke-linecap="round">
+      <path d="M850 139H874"/><path d="M850 171H912"/><path d="M850 235H1000"/><path d="M850 267H1043"/><path d="M850 299H1087"/>
+    </g>
+    <rect x="731" y="185" width="395" height="35" rx="7" fill="#C5F5DA"/>
+    <text x="746" y="208" font-size="14" font-weight="700" fill="#102A2C">HIGH</text>
+    <path d="M850 202H956" stroke="#102A2C" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="964" cy="202" r="7" fill="#CF583E"/>
+    <text x="744" y="350" font-size="12" fill="#A8C4BB">Illustrative effort selection · not a live decision</text>
+  </g>
+</svg>

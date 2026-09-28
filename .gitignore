@@ -1,0 +1,14 @@
+node_modules/
+/astra-jev.json
+.astra-jev-*.tmp
+*.tgz
+artifacts/
+verification/
+WORKPLAN.md
+docs/INTERNAL-*
+.env
+.env.*
+credentials
+*.jsonl
+.DS_Store
+__pycache__/

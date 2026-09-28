@@ -1,0 +1,53 @@
+{
+  "name": "astra-jev",
+  "version": "0.4.1-beta.1",
+  "type": "module",
+  "bin": {
+    "astra-jev": "bin/astra-jev.mjs",
+    "astra-jev-control": "bin/astra-jev-control.mjs"
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node scripts/check.mjs",
+    "pack:check": "node scripts/package-check.mjs",
+    "test:install": "node scripts/install-smoke.mjs"
+  },
+  "engines": {
+    "node": ">=22.19"
+  },
+  "dependencies": {
+    "ws": "8.22.0"
+  },
+  "description": "Adaptive Astra reasoning effort through stock Codex, with Jev decision evidence.",
+  "license": "MIT",
+  "os": [
+    "darwin"
+  ],
+  "files": [
+    "bin/*.mjs",
+    "src/*.mjs",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "PRIVACY.md",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "docs/ARCHITECTURE.md",
+    "docs/COMPATIBILITY.md",
+    "docs/RELEASING.md",
+    "docs/DEMO.md",
+    "examples/astra-jev.json",
+    "CONTRIBUTING.md",
+    "assets/icon.svg",
+    "assets/banner.svg",
+    "assets/logo.svg"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brunocfalcao/astra-jev.git"
+  },
+  "homepage": "https://github.com/brunocfalcao/astra-jev#readme",
+  "bugs": {
+    "url": "https://github.com/brunocfalcao/astra-jev/issues"
+  }
+}

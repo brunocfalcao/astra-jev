@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="128" viewBox="0 0 600 128" role="img" aria-labelledby="title desc">
+  <title id="title">Astra-Jev</title>
+  <desc id="desc">A mint A with a coral effort marker, paired with an original geometric Astra-Jev wordmark.</desc>
+  <style>:root { --ink: #102A2C; } @media (prefers-color-scheme: dark) { :root { --ink: #C5F5DA; } }</style>
+  <rect width="128" height="128" rx="28" fill="#102A2C"/>
+  <path d="M30 95 60 29Q64 21 68 29L98 95" fill="none" stroke="#C5F5DA" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M46 73H82" stroke="#C5F5DA" stroke-width="9" stroke-linecap="round"/>
+  <path d="M29 105H52M60 105H76" stroke="#486467" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="85" cy="73" r="11" fill="#F58C70" stroke="#102A2C" stroke-width="5"/>
+  <g transform="translate(145 39)" fill="none" stroke="var(--ink)" stroke-width="6" stroke-linecap="square" stroke-linejoin="round">
+    <path d="M0 48 18 0 36 48M7 32H29"/>
+    <path d="M83 3H59Q51 3 51 13Q51 23 61 24L74 26Q84 27 84 37Q84 47 75 47H51"/>
+    <path d="M100 2H138M119 2V48"/>
+    <path d="M154 48V2H174Q188 2 188 15Q188 28 174 28H154M174 28 191 48"/>
+    <path d="M207 48 225 0 243 48M214 32H236"/>
+    <path d="M260 26H276" stroke="#9BACA3"/>
+    <path d="M321 2V34Q321 48 308 48Q295 48 295 35"/>
+    <path d="M369 2H342V48H369M342 24H365"/>
+    <path d="M386 2 404 49 422 2"/>
+  </g>
+</svg>

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/brunocfalcao/astra-jev/security/advisories/new
+    about: Read SECURITY.md first; do not disclose sensitive findings publicly.

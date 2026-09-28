@@ -1,0 +1,14 @@
+name: Feature request
+description: Describe the user outcome and current limitation.
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What should the user be able to do?
+    validations:
+      required: true
+  - type: textarea
+    id: limitations
+    attributes:
+      label: Current behavior and acceptable tradeoffs
+      description: Include whether native Codex already supports the behavior.
