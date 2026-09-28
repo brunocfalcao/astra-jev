@@ -3,7 +3,8 @@ import { Controller } from "./controller.mjs";
 import { Context } from "./context.mjs";
 import { HookBridge } from "./hook-bridge.mjs";
 import { Status } from "./status.mjs";
-import { stat } from "node:fs/promises";
+import { stat, realpath } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 export class Session {
@@ -130,12 +131,27 @@ export class Session {
       throw new Error("This session uses Astra only");
     const gated = !resume && !this.fixedEffort;
     const hookConfig = this.hookConfig;
-    if (resume && this.resumePermissions === "read-only") {
+    if (
+      resume &&
+      ["read-only", "workspace-write"].includes(this.resumePermissions)
+    ) {
       this.threadOptions = {
         ...this.threadOptions,
-        sandbox: "read-only",
+        sandbox: this.resumePermissions,
         approvalPolicy: "never",
       };
+      if (this.resumePermissions === "workspace-write") {
+        Object.assign(this.threadOptions, {
+          cwd: resolve(this.cwd),
+          permissions: null,
+          runtimeWorkspaceRoots: [resolve(this.cwd)],
+          config: {
+            ...this.threadOptions.config,
+            "sandbox_workspace_write.writable_roots": [],
+            "sandbox_workspace_write.network_access": false,
+          },
+        });
+      }
     }
     const options = {
       ...params,
@@ -163,6 +179,34 @@ export class Session {
       throw new Error(
         "Codex did not confirm the read-only resume policy; no turn was started",
       );
+    if (resume && this.resumePermissions === "workspace-write") {
+      // The native TUI can materialize macOS temporary directories as explicit
+      // roots. Accept only those already permitted by the sandbox's temp flags.
+      const temporary = [
+        ...(result.sandbox?.excludeTmpdirEnvVar === false ? [tmpdir()] : []),
+        ...(result.sandbox?.excludeSlashTmp === false ? ["/tmp"] : []),
+      ];
+      const allowedRoots = new Set([
+        this.threadOptions.cwd,
+        await realpath(this.threadOptions.cwd),
+        ...temporary,
+        ...(await Promise.all(temporary.map((path) => realpath(path)))),
+      ]);
+      if (
+        result.sandbox?.type !== "workspaceWrite" ||
+        result.sandbox.networkAccess !== false ||
+        !Array.isArray(result.sandbox.writableRoots) ||
+        result.sandbox.writableRoots.some((root) => !allowedRoots.has(root)) ||
+        !Array.isArray(result.runtimeWorkspaceRoots) ||
+        result.runtimeWorkspaceRoots.length !== 1 ||
+        result.runtimeWorkspaceRoots[0] !== this.threadOptions.cwd ||
+        result.cwd !== this.threadOptions.cwd ||
+        result.approvalPolicy !== "never"
+      )
+        throw new Error(
+          "Codex did not confirm the project-scoped workspace-write resume policy; no turn was started",
+        );
+    }
     this.openResult = result;
     this.selectedModel = result.model;
     if (gated) await this.bridge.waitUntilReady();
@@ -356,6 +400,15 @@ export class Session {
       delete options.permissions;
       options.sandboxPolicy = { type: "readOnly", networkAccess: false };
       options.approvalPolicy = "never";
+    } else if (this.resumed && this.resumePermissions === "workspace-write") {
+      delete options.permissions;
+      options.cwd = this.threadOptions.cwd;
+      options.sandboxPolicy = { ...this.openResult.sandbox, writableRoots: [] };
+      options.approvalPolicy = "never";
+      if (Object.hasOwn(options, "runtimeWorkspaceRoots"))
+        options.runtimeWorkspaceRoots = [
+          ...this.threadOptions.runtimeWorkspaceRoots,
+        ];
     }
     return options;
   }

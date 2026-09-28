@@ -53,7 +53,9 @@ export async function projectConfig(cwd) {
     typeof config.verbose !== "boolean" ||
     typeof config.noAltScreen !== "boolean" ||
     typeof config.requireJev !== "boolean" ||
-    !["read-only", "codex"].includes(config.resumePermissions) ||
+    !["read-only", "workspace-write", "codex"].includes(
+      config.resumePermissions,
+    ) ||
     ![null, "low", "medium", "high", "xhigh", "max", "ultra"].includes(
       config.fixedEffort,
     )

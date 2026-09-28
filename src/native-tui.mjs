@@ -274,7 +274,11 @@ export class NativeTui {
           ...params,
           ...this.session.threadOptions,
           model: this.session.selectedModel ?? "gpt-6-astra",
-          config: { ...params.config, ...this.session.hookConfig },
+          config: {
+            ...params.config,
+            ...this.session.threadOptions.config,
+            ...this.session.hookConfig,
+          },
         });
         this.attached = true;
       } else if (

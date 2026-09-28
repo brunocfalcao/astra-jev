@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.0.5 — 2026-09-28
+
+### Features
+- [NEW FEATURE] Add `resumePermissions: "workspace-write"` so resumed conversations can edit the launch project while Jev continues choosing effort before each turn.
+
+### Fixes
+- [BUG FIX] Keep the selected workspace scope across model switches, settings changes and reconnections. Native temporary directories remain available; extra writable roots and sandbox network access stay disabled.
+
+### Improvements
+- [IMPROVED] Explain the native resume effort-verification limitation once per session, then show concise effort selections. Quiet mode stays quiet.
+- [IMPROVED] Document the difference between effort confirmation and file permissions, plus how to enable writable resumes and restart.
+- [IMPROVED] Cover permission validation, settings preservation and reconnect behavior with regression tests; verify an actual project write and an outside-project denial through the stock Codex TUI.
+
+Resume remains read-only by default; existing settings are preserved. This remains a macOS beta for stock Codex 0.157.1. Resumed sessions select effort per turn, without native capture confirmation or mid-turn adaptation. A separate clean-Mac trial remains pending.
+
 ## 0.0.4 — 2026-09-28
 
 ### Features

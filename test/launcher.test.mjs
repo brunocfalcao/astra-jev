@@ -68,6 +68,35 @@ test("project verbosity defaults on, accepts quiet mode and rejects non-booleans
   }
 });
 
+test("project resume policy defaults read-only and accepts scoped writes explicitly", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "astra-resume-config-"));
+  const path = join(cwd, "astra-jev.json");
+  try {
+    assert.equal((await projectConfig(cwd)).resumePermissions, "read-only");
+    for (const resumePermissions of ["read-only", "workspace-write", "codex"]) {
+      const contents = JSON.stringify({ resumePermissions });
+      await writeFile(path, contents);
+      assert.equal(
+        (await projectConfig(cwd)).resumePermissions,
+        resumePermissions,
+      );
+      assert.equal(await readFile(path, "utf8"), contents);
+    }
+    for (const resumePermissions of [
+      "danger-full-access",
+      null,
+      false,
+      [],
+      {},
+    ]) {
+      await writeFile(path, JSON.stringify({ resumePermissions }));
+      await assert.rejects(projectConfig(cwd), /Invalid astra-jev.json/);
+    }
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test("launch routing preserves prompts, resume syntax and Codex option boundaries", () => {
   for (const args of [
     [],

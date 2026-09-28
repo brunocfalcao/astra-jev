@@ -83,8 +83,13 @@ test("initial, resumed and late captures preserve their evidence level", () => {
   const resumed = setup({ captureEvents: false });
   resumed.select("high");
   resumed.event("turn_completed");
+  resumed.event("turn_preparing");
+  resumed.select("low");
+  resumed.event("turn_completed");
   assert.deepEqual(resumed.text(), [
-    "Jev selected HIGH effort; capture unavailable on this resumed thread",
+    "Resumed session: Jev chooses effort before each message. Codex cannot confirm the effort used here; mid-reply Jev changes are unavailable.",
+    "Jev selected HIGH effort for this turn",
+    "Jev selected LOW effort for this turn",
   ]);
 });
 

@@ -73,11 +73,21 @@ try {
     }).stdout,
     /astra-jev-control/,
   );
+  const settingsPath = join(workspace, "astra-jev.json");
+  const settings = JSON.parse(await readFile(settingsPath, "utf8"));
+  const customized =
+    JSON.stringify({
+      ...settings,
+      verbose: false,
+      resumePermissions: "workspace-write",
+    }) + "\n";
+  await writeFile(settingsPath, customized);
   run("npm", installArgs); // Reinstallation/upgrade mechanics, same version.
   assert.match(
     run(executable, ["--version"], { cwd: workspace, env }).stdout,
     /codex-cli fixture/,
   );
+  assert.equal(await readFile(settingsPath, "utf8"), customized);
   run("npm", [
     "uninstall",
     "--global",
@@ -90,7 +100,7 @@ try {
   await assert.rejects(access(join(prefix, "bin/astra-jev-control")), {
     code: "ENOENT",
   });
-  await access(join(workspace, "astra-jev.json"));
+  assert.equal(await readFile(settingsPath, "utf8"), customized);
   console.log(
     "Isolated-prefix install, reinstall, both commands and uninstall passed; project settings preserved.",
   );

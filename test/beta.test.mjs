@@ -10,6 +10,7 @@ import {
   symlink,
   chmod,
   access,
+  realpath,
 } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -22,7 +23,11 @@ import { modeLabel } from "../src/status.mjs";
 import { acknowledgePrivacy, privacyAcknowledged } from "../src/onboarding.mjs";
 import { projectConfig } from "../src/project-config.mjs";
 
-function transportFixture({ sandbox = "readOnly", version = "0.157.1" } = {}) {
+function transportFixture({
+  sandbox = "readOnly",
+  version = "0.157.1",
+  resumeResult = {},
+} = {}) {
   const t = new EventEmitter();
   t.config = [];
   t.calls = [];
@@ -48,6 +53,7 @@ function transportFixture({ sandbox = "readOnly", version = "0.157.1" } = {}) {
         model: "gpt-6-astra",
         sandbox: { type: sandbox },
         thread: { id: "owned", turns: [] },
+        ...resumeResult,
       };
     if (method === "turn/start") return { turn: { id: "turn" } };
     return {};
@@ -113,6 +119,146 @@ test("resume rejects an unconfirmed permission policy before any turn; explicit 
       }
       assert.equal(
         transport.calls.some((x) => x.method === "turn/start"),
+        false,
+      );
+    } finally {
+      await s.close();
+    }
+  }
+});
+
+test("workspace-write resume permits project edits while pinning later model turns and settings", async () => {
+  const policy = {
+    type: "workspaceWrite",
+    writableRoots: await Promise.all(
+      [tmpdir(), "/tmp"].map((path) => realpath(path)),
+    ),
+    networkAccess: false,
+    excludeTmpdirEnvVar: false,
+    excludeSlashTmp: false,
+  };
+  const transport = transportFixture({
+    resumeResult: {
+      sandbox: policy,
+      cwd: process.cwd(),
+      runtimeWorkspaceRoots: [process.cwd()],
+      approvalPolicy: "never",
+    },
+  });
+  const s = new Session({
+    transport,
+    cwd: process.cwd(),
+    resumePermissions: "workspace-write",
+    jev: { decide: async () => ({ effort: "low", leaseSteps: 1 }) },
+  });
+  try {
+    await s.open({
+      resume: "owned",
+      params: {
+        cwd: "/elsewhere",
+        sandbox: "danger-full-access",
+        permissions: "full",
+        runtimeWorkspaceRoots: ["/elsewhere"],
+        config: {
+          "sandbox_workspace_write.network_access": true,
+          "sandbox_workspace_write.writable_roots": ["/elsewhere"],
+        },
+      },
+    });
+    const opened = transport.calls.find(
+      (call) => call.method === "thread/resume",
+    ).params;
+    assert.equal(opened.sandbox, "workspace-write");
+    assert.equal(opened.cwd, process.cwd());
+    assert.equal(opened.permissions, null);
+    assert.deepEqual(opened.runtimeWorkspaceRoots, [process.cwd()]);
+    assert.equal(
+      opened.config["sandbox_workspace_write.network_access"],
+      false,
+    );
+    assert.deepEqual(
+      opened.config["sandbox_workspace_write.writable_roots"],
+      [],
+    );
+    assert.equal(s.status().sandbox, "workspaceWrite");
+    for (const model of ["gpt-6-sol", "gpt-6-astra"]) {
+      await s.startTurn({
+        model,
+        input: [],
+        cwd: "/elsewhere",
+        permissions: "full",
+        runtimeWorkspaceRoots: ["/elsewhere"],
+        sandboxPolicy: { type: "dangerFullAccess" },
+      });
+      const turn = transport.calls
+        .filter((call) => call.method === "turn/start")
+        .at(-1).params;
+      assert.deepEqual(turn.sandboxPolicy, { ...policy, writableRoots: [] });
+      assert.equal(turn.cwd, process.cwd());
+      assert.equal(turn.approvalPolicy, "never");
+      assert.equal(turn.permissions, undefined);
+      assert.deepEqual(turn.runtimeWorkspaceRoots, [process.cwd()]);
+      s.running = false;
+      await s.updateSettings({
+        model,
+        cwd: "/elsewhere",
+        permissions: "full",
+        sandboxPolicy: { type: "dangerFullAccess" },
+      });
+      const update = transport.calls.at(-1).params;
+      assert.deepEqual(update.sandboxPolicy, { ...policy, writableRoots: [] });
+      assert.equal(update.cwd, process.cwd());
+      assert.equal(update.permissions, undefined);
+    }
+  } finally {
+    await s.close();
+  }
+});
+
+test("workspace-write resume rejects broader or unconfirmed native permissions before work", async () => {
+  const good = {
+    sandbox: {
+      type: "workspaceWrite",
+      writableRoots: [],
+      networkAccess: false,
+    },
+    cwd: process.cwd(),
+    runtimeWorkspaceRoots: [process.cwd()],
+    approvalPolicy: "never",
+  };
+  for (const bad of [
+    { sandbox: { type: "dangerFullAccess" } },
+    { sandbox: { ...good.sandbox, networkAccess: true } },
+    { sandbox: { ...good.sandbox, writableRoots: ["/elsewhere"] } },
+    {
+      sandbox: {
+        ...good.sandbox,
+        writableRoots: ["/tmp"],
+        excludeSlashTmp: true,
+      },
+    },
+    { sandbox: { ...good.sandbox, writableRoots: null } },
+    { cwd: "/elsewhere" },
+    { runtimeWorkspaceRoots: ["/elsewhere"] },
+    { runtimeWorkspaceRoots: null },
+    { runtimeWorkspaceRoots: [] },
+    { approvalPolicy: "on-request" },
+  ]) {
+    const transport = transportFixture({ resumeResult: { ...good, ...bad } });
+    const s = new Session({
+      transport,
+      cwd: process.cwd(),
+      resumePermissions: "workspace-write",
+      fixedEffort: "high",
+    });
+    try {
+      await assert.rejects(
+        s.open({ resume: "owned" }),
+        /did not confirm.*workspace-write/,
+      );
+      assert.equal(s.threadId, undefined);
+      assert.equal(
+        transport.calls.some((call) => call.method === "turn/start"),
         false,
       );
     } finally {
@@ -305,9 +451,9 @@ test("mode labels distinguish adaptive, resumed, fixed and inactive without clai
     }),
     /ADAPTIVE.*readOnly/,
   );
-  assert.match(
+  assert.equal(
     modeLabel({ mode: "turn-only-resume", policy: "auto" }),
-    /PER-TURN \(capture unavailable\)/,
+    "Jev mode: PER-TURN | Permissions: not selected | Require Jev: off",
   );
   assert.match(
     modeLabel({ mode: "turn-only-resume", policy: "high" }),

@@ -161,7 +161,7 @@ export function modeLabel(s) {
         : s.mode === "adaptive-checkpoint"
           ? "ADAPTIVE"
           : s.mode === "turn-only-resume"
-            ? "PER-TURN (capture unavailable)"
+            ? "PER-TURN"
             : "INACTIVE";
   return `Jev mode: ${mode} | Permissions: ${s.sandbox ?? "not selected"} | Require Jev: ${s.requireJev ? "on" : "off"}`;
 }

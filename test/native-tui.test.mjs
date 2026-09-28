@@ -388,6 +388,66 @@ test("deferred resume lets Codex inspect candidates and opens only the selected 
   }
 });
 
+test("reattaching the owned resumed thread retains the configured workspace scope", async () => {
+  const calls = [];
+  const scope = {
+    "sandbox_workspace_write.writable_roots": [],
+    "sandbox_workspace_write.network_access": false,
+  };
+  const session = {
+    threadId: "owned",
+    selectedModel: "gpt-6-sol",
+    threadOptions: {
+      cwd: "/project",
+      sandbox: "workspace-write",
+      approvalPolicy: "never",
+      permissions: null,
+      runtimeWorkspaceRoots: ["/project"],
+      config: scope,
+    },
+    transport: {
+      request: async (method, params) => {
+        calls.push({ method, params });
+        return {};
+      },
+    },
+    controller: { context: { clean: (text) => text } },
+  };
+  const gateway = new NativeTui({ session });
+  gateway.send = (response) => assert.equal(response.error, undefined);
+  await gateway.receive(
+    Buffer.from(
+      JSON.stringify({
+        id: 1,
+        method: "thread/resume",
+        params: {
+          threadId: "owned",
+          cwd: "/elsewhere",
+          sandbox: "danger-full-access",
+          permissions: "full",
+          runtimeWorkspaceRoots: ["/elsewhere"],
+          config: {
+            web_search: "disabled",
+            "sandbox_workspace_write.network_access": true,
+            "sandbox_workspace_write.writable_roots": ["/elsewhere"],
+          },
+        },
+      }),
+    ),
+  );
+  assert.deepEqual(calls, [
+    {
+      method: "thread/resume",
+      params: {
+        ...session.threadOptions,
+        threadId: "owned",
+        model: "gpt-6-sol",
+        config: { web_search: "disabled", ...scope },
+      },
+    },
+  ]);
+});
+
 test("deferred fresh start preserves native sandbox and configuration before Jev runs", async () => {
   const transport = new AppServer({
     spawnImpl: (_, args, opts) =>

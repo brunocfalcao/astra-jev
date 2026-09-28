@@ -10,6 +10,7 @@ export class EffortNotices {
     Object.assign(this, { session, emit, verbose });
     this.captured = session.controller?.capturedEffort ?? null;
     this.inactive = session.mode === "inactive";
+    this.resumeExplained = false;
   }
   handle(event) {
     if (event.threadId !== this.session.threadId) return;
@@ -45,10 +46,18 @@ export class EffortNotices {
         return;
       const decision = { ...event, startedAt: this.evaluation?.time };
       if (!this.session.controller.captureEvents) {
+        if (this.verbose && !this.resumeExplained) {
+          this.resumeExplained = true;
+          this.show(
+            decision,
+            "resume",
+            "Resumed session: Jev chooses effort before each message. Codex cannot confirm the effort used here; mid-reply Jev changes are unavailable.",
+          );
+        }
         this.show(
           decision,
           "selected",
-          `Jev selected ${event.effort.toUpperCase()} effort; capture unavailable on this resumed thread`,
+          `Jev selected ${event.effort.toUpperCase()} effort for this turn`,
         );
       } else if (event.effort === this.captured) {
         this.show(
