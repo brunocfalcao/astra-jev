@@ -6,7 +6,9 @@ Managed sessions use stock Codex over stdio, a WebSocket gateway on an owner-onl
 
 Jev selects Astra effort and a lease of 1, 2, 5 or 10 generations. The controller publishes supported native effort updates and separately observes native capture events. An acknowledgement is not a capture. Distinct raw response IDs advance leases; new prompts and reported failures cause reassessment. Bounded context and typed probability metadata support diagnosis, not a correctness proof.
 
-The gateway owns one thread and forwards native approvals. Other-thread hooks pass through without evaluator access. Disconnects interrupt active work and decline pending requests. Steered input is rejected until the active turn is interrupted. Hosted/no-tool/asynchronous continuations are not universally gated.
+The gateway owns one thread and forwards native approvals. Other-thread hooks pass through without evaluator access. Disconnects interrupt active work and decline pending requests. Steered input is rejected while Astra is managed until the active turn is interrupted. Hosted/no-tool/asynchronous continuations are not universally gated.
+
+Native model selection updates the session's Jev mode. A non-Astra turn passes its model, effort and collaboration settings through without evaluation; the existing read-only permission pin still applies. The attached checkpoint relay returns immediately without retaining content, and its activity notices are hidden while inactive. Returning to Astra restores the original adaptive/per-turn/fixed policy with cleared evaluator context and effort-capture state. In-flight turns keep their current controller until completion. `requireJev` rejects non-Astra selection before forwarding it.
 
 Resume lacks the verified stock API's raw-event opt-in. Jev chooses effort per user turn only. Managed resume defaults to an explicit read-only sandbox; the result is checked before accepting the thread and each subsequent turn is pinned. A native client request cannot widen this policy. Opting into `resumePermissions: "codex"` deliberately relinquishes that pin. Fixed and direct modes never attribute their decisions to Jev.
 

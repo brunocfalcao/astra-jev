@@ -28,17 +28,29 @@ export class Status {
     if (event.type === "session_opened")
       Object.assign(v, {
         mode: event.mode,
+        model: event.model,
         policy: event.policy ?? "auto",
         phase: "ready",
         sandbox: event.sandbox,
         requireJev: event.requireJev ?? false,
+      });
+    if (event.type === "model_changed")
+      Object.assign(v, {
+        mode: event.mode,
+        model: event.model,
+        capturedEffort: null,
+        selectedEffort: null,
+        generations: 0,
+        phase: "ready",
+        jev: event.mode === "inactive" ? "inactive" : "not checked",
+        lastError: null,
       });
     if (event.type === "policy_changed") v.policy = event.policy;
     if (event.type === "turn_preparing")
       Object.assign(v, {
         generations: 0,
         lastError: null,
-        phase: "evaluating",
+        phase: v.mode === "inactive" ? "running" : "evaluating",
       });
     if (event.type === "evaluation_requested") {
       v.phase = v.policy === "auto" ? "evaluating" : "running";
@@ -108,21 +120,24 @@ export class Status {
 
 export function statusLines(s) {
   const effort =
-    s.mode === "turn-only-resume"
-      ? "unverified on resumed thread"
-      : (s.capturedEffort ?? "awaiting native capture");
+    s.mode === "inactive"
+      ? "inactive for selected model"
+      : s.mode === "turn-only-resume"
+        ? "unverified on resumed thread"
+        : (s.capturedEffort ?? "awaiting native capture");
   return [
     `Astra + Jev | ${s.phase} | ${s.live === true ? "live host" : s.live === false ? "recorded, not a liveness check" : "current session"}`,
     modeLabel(s),
     `Astra captured: ${effort} | Selected: ${s.selectedEffort ?? "none"} | Policy: ${s.policy}`,
-    `Jev: ${s.policy !== "auto" ? "paused by manual effort" : s.jev}${s.jevLatencyMs !== undefined ? ` | Last decision: ${s.jevLatencyMs} ms` : ""}`,
+    `Jev: ${s.mode === "inactive" ? "inactive" : s.policy !== "auto" ? "paused by manual effort" : s.jev}${s.jevLatencyMs !== undefined ? ` | Last decision: ${s.jevLatencyMs} ms` : ""}`,
+    ...(s.model ? [`Selected model: ${s.model}`] : []),
     ...(s.policyVersion
       ? [
           `Jev policy: ${s.policyVersion} | Confidence: ${s.decisionConfidence ?? "unavailable"} | Lease: ${s.leaseSteps} generation(s)${s.leaseLimitedByUncertainty ? " (shortened for uncertainty)" : ""}`,
         ]
       : []),
     `This turn: ${s.generations} generations | Session: ${s.checkpoints} checkpoints, ${s.evaluations} Jev decisions`,
-    `Model tokens: ${s.inputTokens} input (${s.cachedInputTokens} cached), ${s.outputTokens} output`,
+    `Captured Astra tokens: ${s.inputTokens} input (${s.cachedInputTokens} cached), ${s.outputTokens} output`,
     `Coverage: ${s.mode === "adaptive-checkpoint" ? "supported local tools; hosted/no-tool continuations excluded" : s.mode}`,
     ...(s.sandbox ? [`Native sandbox: ${s.sandbox}`] : []),
     ...(s.outsideThreadSeen
@@ -139,13 +154,15 @@ export function statusLines(s) {
 
 export function modeLabel(s) {
   const mode =
-    s.policy && s.policy !== "auto"
-      ? "FIXED"
-      : s.mode === "adaptive-checkpoint"
-        ? "ADAPTIVE"
-        : s.mode === "turn-only-resume"
-          ? "PER-TURN (capture unavailable)"
-          : "INACTIVE";
+    s.mode === "inactive"
+      ? "INACTIVE"
+      : s.policy && s.policy !== "auto"
+        ? "FIXED"
+        : s.mode === "adaptive-checkpoint"
+          ? "ADAPTIVE"
+          : s.mode === "turn-only-resume"
+            ? "PER-TURN (capture unavailable)"
+            : "INACTIVE";
   return `Jev mode: ${mode} | Permissions: ${s.sandbox ?? "not selected"} | Require Jev: ${s.requireJev ? "on" : "off"}`;
 }
 

@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>Adaptive reasoning for GPT-6 Astra. Powered by Jev. Built on stock Codex.</strong><br />
-  v0.0.1 · macOS beta preview · Codex 0.157.1 · Node 22.19+ · MIT
+  v0.0.2 · macOS beta preview · Codex 0.157.1 · Node 22.19+ · MIT
 </p>
 
 <p align="center">
@@ -31,20 +31,20 @@
 
 Install stock Codex separately and sign in with an account that has Astra access. Use the exact supported Codex version; see [compatibility](docs/COMPATIBILITY.md). Jev needs a separate TypeSafe API key.
 
-Install the first tagged macOS beta:
+Install the latest tagged macOS beta:
 
 ```sh
-npm install --global --ignore-scripts 'https://github.com/brunocfalcao/astra-jev/releases/download/v0.0.1/astra-jev-0.0.1.tgz'
+npm install --global --ignore-scripts 'https://github.com/brunocfalcao/astra-jev/releases/download/v0.0.2/astra-jev-0.0.2.tgz'
 astra-jev-control setup
 astra-jev-control doctor
 ```
 
-The [release page](https://github.com/brunocfalcao/astra-jev/releases/tag/v0.0.1) includes the archive, SHA-256 checksum and tested scope. No Git installation is needed for the archive. The macOS CI badge links to the exact checks and results; a clean-Mac trial remains pending.
+The [release page](https://github.com/brunocfalcao/astra-jev/releases/tag/v0.0.2) includes the archive, SHA-256 checksum and tested scope. No Git installation is needed for the archive. The macOS CI badge links to the exact checks and results; a clean-Mac trial remains pending.
 
 > [!WARNING]
 > **Long home-directory paths can prevent startup.** Managed TUI sessions and named hosts create a Unix socket under `~/.local/share/astra-jev/run/`. On macOS, the complete socket path must fit within **103 bytes**. Long usernames or deeply nested home directories can trigger `Session socket path is too long`; the affected launch stops before any model turn. This beta has no setting for a shorter socket directory yet. Moving your project does not shorten this home-based path. If affected, [report the error](https://github.com/brunocfalcao/astra-jev/issues/new/choose) with your home-path byte length, without sharing private paths or credentials.
 
-`setup` explains the data flow, asks for acknowledgment, and can securely store a key using hidden terminal input. It never displays the key. An existing `TYPESAFE_API_KEY` environment variable also works. Read [privacy](PRIVACY.md) before using confidential projects.
+`setup` explains the data flow and asks for acknowledgment: **type `YES`, then press Enter** to allow it. Enter alone cancels setup; no evaluator request is sent. It can securely store a key using hidden terminal input and never displays the key. An existing `TYPESAFE_API_KEY` environment variable also works. Read [privacy](PRIVACY.md) before using confidential projects.
 
 In a project folder:
 
@@ -57,6 +57,10 @@ astra-jev resume THREAD_ID "Continue"
 ```
 
 All arguments belong to Codex. `astra-jev --help` is Codex help; `astra-jev doctor` is Codex doctor. Wrapper diagnostics use **`astra-jev-control`**. Native TUI is the default; no `--tui` is needed.
+
+In the resume picker, **Enter** opens the selected conversation. **Esc** starts a fresh session with the same effort settings and native project permissions as launching `astra-jev` directly. The read-only resume policy applies when reopening a saved conversation.
+
+**Switch models with `/model`.** Selecting a model other than Astra makes Jev inactive in the same conversation. Codex uses that model's native effort setting; Jev makes no evaluator requests or effort updates for its turns. Selecting Astra again restores the session's adaptive, per-turn or fixed policy automatically. Inline notices and live status show the transition. A selection made during a running turn takes effect after that turn finishes. `requireJev: true` blocks non-Astra selection.
 
 ## Know what is running
 
@@ -71,7 +75,7 @@ Astra changed to HIGH effort (Jev)
 - **ADAPTIVE:** Jev controls the owned thread at supported local-tool checkpoints.
 - **PER-TURN:** resumed thread; Jev chooses each user turn's effort. Native capture verification and mid-turn adaptation are unavailable.
 - **FIXED:** the configured effort is used; Jev is inactive.
-- **INACTIVE:** arguments run directly through stock Codex. Startup gives the reason.
+- **INACTIVE:** a non-Astra model is selected in the managed conversation, or arguments run directly through stock Codex. The displayed notice gives the reason.
 
 “Changed” requires a native capture event. Selected, unavailable and unconfirmed decisions are labelled accordingly. The native footer can show an earlier setting; use the inline evidence and the printed live-status command:
 
@@ -102,14 +106,14 @@ The first launch creates `astra-jev.json` in the current project directory (or l
 | `enabled` | Enable the managed Astra integration when compatible. |
 | `fixedEffort` | `null` for Jev; otherwise `low`, `medium`, `high`, `xhigh`, `max`, or `ultra`. |
 | `noAltScreen` | Prefer inline terminal rendering. |
-| `requireJev` | Refuse direct-stock/fixed launches; stop on evaluator or effort-publication failure. Supported checkpoint coverage still applies. |
+| `requireJev` | Refuse direct-stock/fixed launches and non-Astra model switches; stop on evaluator or effort-publication failure. Supported checkpoint coverage still applies. |
 | `resumePermissions` | Default `read-only` pins managed resumed turns to read-only with network access disabled. `codex` explicitly opts into Codex's current permissions. |
 
 **Resume is read-only by default.** This prevents a saved read-only conversation from silently reopening with broader current settings. The policy is checked before a resumed turn and enforced on every managed turn. To request native permission overrides directly, use Codex flags, such as `astra-jev resume --sandbox workspace-write`; that path currently runs without Jev. Changing the JSON policy to `codex` also relinquishes the read-only pin, so review the displayed permissions before proceeding.
 
 ## Scope and limits
 
-Other subcommands (`exec`, `review`, `fork`, etc.), other models, external `--remote`, profiles, worktrees, additional workspace directories and incompatible overrides use stock Codex directly. Unknown future flags are passed through. `requireJev: true` blocks this fallback. A missing Jev key is an error, not an automatic fallback.
+Other subcommands (`exec`, `review`, `fork`, etc.), launching with another model, external `--remote`, profiles, worktrees, additional workspace directories and incompatible overrides use stock Codex directly. Unknown future flags are passed through. `requireJev: true` blocks this fallback. A missing Jev key is an error, not an automatic fallback. Automatic Jev reactivation is available inside a managed session; a direct-stock launch stays unmanaged.
 
 The wrapper prepends process-local disabled shell-snapshot defaults to local stock launches. Native explicit overrides follow Codex precedence. An external server owns its own settings. Endpoint protection is never changed; no zero-alert guarantee is made.
 
@@ -117,7 +121,7 @@ One managed TUI owns one thread. Interrupt before follow-up input during a turn.
 
 ## Update, uninstall, contribute
 
-To update, install the archive from the next reviewed release. Source installations can use `git+https://github.com/brunocfalcao/astra-jev.git#v0.0.1` with Git installed; use a reviewed tag or commit SHA for repeatability. Project settings and credentials survive reinstall. Uninstall with:
+To update, install the archive from the latest reviewed release using the command above, then restart Astra-Jev. Source installations can use `git+https://github.com/brunocfalcao/astra-jev.git#v0.0.2` with Git installed; use a reviewed tag or commit SHA for repeatability. Project settings and credentials survive reinstall. Uninstall with:
 
 ```sh
 npm uninstall --global astra-jev

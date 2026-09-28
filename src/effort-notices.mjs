@@ -12,6 +12,20 @@ export class EffortNotices {
   }
   handle(event) {
     if (event.threadId !== this.session.threadId) return;
+    if (event.type === "model_changed") {
+      this.pending = null;
+      this.evaluation = null;
+      this.captured = null;
+      this.show(
+        event,
+        "mode",
+        event.mode === "inactive"
+          ? "Jev inactive for the selected model; select Astra to reactivate"
+          : this.session.status().policy === "auto"
+            ? "Jev active for Astra again"
+            : "Fixed Astra effort restored; Jev inactive",
+      );
+    }
     if (event.type === "turn_preparing") {
       this.pending = null;
       this.evaluation = null;

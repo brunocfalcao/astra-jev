@@ -75,7 +75,7 @@ function ask(prompt, { secret = false } = {}) {
     output: secret ? muted : process.stdout,
     terminal: true,
   });
-  process.stdout.write(prompt);
+  if (secret) process.stdout.write(prompt);
   return new Promise((resolve, reject) => {
     let answered = false;
     rl.once("SIGINT", () => {
@@ -84,7 +84,7 @@ function ask(prompt, { secret = false } = {}) {
     rl.once("close", () => {
       if (!answered) reject(new Error("Setup cancelled"));
     });
-    rl.question("", (answer) => {
+    rl.question(secret ? "" : prompt, (answer) => {
       answered = true;
       rl.close();
       if (secret) process.stdout.write("\n");
@@ -96,10 +96,12 @@ export async function ensurePrivacy() {
   if (await privacyAcknowledged()) return;
   console.error(privacyNotice);
   const answer = await ask(
-    "Allow this data flow for Jev sessions on this account? [y/N] ",
+    "Allow this data flow? Type YES, then press Enter; Enter alone cancels: ",
   );
   if (!/^y(?:es)?$/i.test(answer.trim()))
-    throw new Error("Jev setup cancelled; no evaluator request was sent");
+    throw new Error(
+      "Jev setup cancelled; no evaluator request was sent. To enable Jev, run astra-jev-control setup and type YES when asked.",
+    );
   await acknowledgePrivacy();
 }
 export async function setup() {

@@ -13,6 +13,8 @@ const args = get(`mcp_servers.${server}.args`);
 let child,
   requestId = 0,
   currentEffort,
+  currentModel = "gpt-6-astra",
+  captureEvents = true,
   turn = 0,
   trusted = false;
 const pending = new Map();
@@ -91,23 +93,38 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
         },
       ],
     });
-  else if (m.method === "thread/start") {
+  else if (["thread/start", "thread/resume"].includes(m.method)) {
+    captureEvents = m.method === "thread/start";
     await boot();
     trusted =
       p.config?.["hooks.state"]?.[hook.key]?.trusted_hash === hook.currentHash;
     reply({
-      thread: { id: "thread-checkpoint", path: null },
+      thread: { id: "thread-checkpoint", path: null, turns: [] },
       model: "gpt-6-astra",
+      sandbox: { type: p.sandbox === "read-only" ? "readOnly" : "workspaceWrite" },
     });
+  } else if (m.method === "thread/settings/update") {
+    currentModel = p.collaborationMode?.settings?.model ?? p.model ?? currentModel;
+    send({
+      method: "thread/settings/updated",
+      params: {
+        threadId: "thread-checkpoint",
+        threadSettings: { model: currentModel },
+      },
+    });
+    reply({});
   } else if (m.method === "turn/settings/update") {
     currentEffort = p.effort;
     reply({ status: "applied" });
   } else if (m.method === "turn/start") {
     const turnId = `turn-${++turn}`,
       base = { threadId: "thread-checkpoint", turnId };
-    const event = (method, rest) =>
+    const event = (method, rest) => {
+      if (!captureEvents && method.startsWith("rawResponse")) return;
       send({ method, params: { ...base, ...rest } });
-    currentEffort = p.effort;
+    };
+    currentModel = p.collaborationMode?.settings?.model ?? p.model ?? currentModel;
+    currentEffort = p.collaborationMode?.settings?.reasoning_effort ?? p.effort;
     reply({ turn: { id: turnId, status: "inProgress" } });
     event("turn/started", { turn: { id: turnId } });
     event("rawResponseItem/completed", {

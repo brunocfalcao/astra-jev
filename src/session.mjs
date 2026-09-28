@@ -164,6 +164,7 @@ export class Session {
         "Codex did not confirm the read-only resume policy; no turn was started",
       );
     this.openResult = result;
+    this.selectedModel = result.model;
     if (gated) await this.bridge.waitUntilReady();
     this.threadId = result.thread.id;
     this.threadPath = result.thread.path;
@@ -265,63 +266,129 @@ export class Session {
   }
   async startTurn(params) {
     if (this.running) throw new Error("A turn is already running");
-    if (this.checkpointFailed)
+    const previousModel = this.selectedModel ?? "gpt-6-astra";
+    const model = this.requestedModel(params);
+    const astra = model === "gpt-6-astra";
+    this.requireSupportedSelection(model);
+    if (astra && this.checkpointFailed)
       throw new Error(
         "Native checkpoint failed; restart this session or launch with fixed effort.",
       );
-    if (params.model && params.model !== "gpt-6-astra")
-      throw new Error("This session uses Astra only");
     const mode = params.collaborationMode;
-    if (mode?.settings?.model && mode.settings.model !== "gpt-6-astra")
-      throw new Error("This session uses Astra only");
+    this.selectModel(model);
     this.running = true;
     try {
       const input = params.input ?? [];
       for (const image of input.filter((x) => x.type === "localImage"))
         if (!(await stat(image.path)).isFile())
           throw new Error("Image attachment is not a file");
-      const prompt = input
-        .filter((x) => x.type === "text")
-        .map((x) => x.text)
-        .join("\n");
-      const effort = await this.controller.begin({
-        threadId: this.threadId,
-        prompt,
-        defaultEffort: this.model.defaultReasoningEffort,
-        imageCount: input.filter((x) =>
-          ["localImage", "image"].includes(x.type),
-        ).length,
-      });
       this.text = "";
       const options = {
         ...params,
         threadId: this.threadId,
-        model: "gpt-6-astra",
-        effort,
       };
-      if (mode)
-        options.collaborationMode = {
-          ...mode,
-          settings: {
-            ...mode.settings,
-            model: "gpt-6-astra",
-            reasoning_effort: effort,
-          },
-        };
-      if (this.threadOptions.sandbox === "read-only") {
-        delete options.permissions;
-        options.sandboxPolicy = { type: "readOnly", networkAccess: false };
-        options.approvalPolicy = "never";
+      if (astra) {
+        const prompt = input
+          .filter((x) => x.type === "text")
+          .map((x) => x.text)
+          .join("\n");
+        const effort = await this.controller.begin({
+          threadId: this.threadId,
+          prompt,
+          defaultEffort: this.model.defaultReasoningEffort,
+          imageCount: input.filter((x) =>
+            ["localImage", "image"].includes(x.type),
+          ).length,
+        });
+        Object.assign(options, { model: "gpt-6-astra", effort });
+        if (mode)
+          options.collaborationMode = {
+            ...mode,
+            settings: {
+              ...mode.settings,
+              model: "gpt-6-astra",
+              reasoning_effort: effort,
+            },
+          };
+      } else {
+        this.record({
+          time: new Date().toISOString(),
+          type: "turn_preparing",
+          threadId: this.threadId,
+        });
       }
-      const result = await this.transport.request("turn/start", options);
-      this.controller.attach(result.turn.id);
+      const result = await this.transport.request(
+        "turn/start",
+        this.withPermissions(options),
+      );
+      if (astra) this.controller.attach(result.turn.id);
       this.turnId = result.turn.id;
       return result;
     } catch (error) {
       this.running = false;
       this.controller.stop();
+      if (this.selectedModel === model) this.selectModel(previousModel);
       throw error;
     }
+  }
+  requestedModel(params = {}) {
+    // Stock Codex gives collaboration settings precedence over the top-level model.
+    return (
+      params.collaborationMode?.settings?.model ??
+      params.model ??
+      this.selectedModel ??
+      "gpt-6-astra"
+    );
+  }
+  requireSupportedSelection(model) {
+    if (this.requireJev && model !== "gpt-6-astra")
+      throw new Error(
+        "Jev is required for this session and supports Astra only. Select Astra or restart with requireJev disabled.",
+      );
+  }
+  withPermissions(params) {
+    const options = { ...params };
+    if (this.threadOptions.sandbox === "read-only") {
+      delete options.permissions;
+      options.sandboxPolicy = { type: "readOnly", networkAccess: false };
+      options.approvalPolicy = "never";
+    }
+    return options;
+  }
+  async updateSettings(params) {
+    this.requireSupportedSelection(this.requestedModel(params));
+    return this.transport.request(
+      "thread/settings/update",
+      this.withPermissions(params),
+    );
+  }
+  selectModel(model) {
+    this.selectedModel = model;
+    // A settings change during a turn applies to the next turn. Keep the
+    // running controller attached to the model that owns the current work.
+    if (this.running) return;
+    const mode =
+      model !== "gpt-6-astra"
+        ? "inactive"
+        : this.resumed
+          ? "turn-only-resume"
+          : this.fixedEffort
+            ? "fixed"
+            : "adaptive-checkpoint";
+    if (this.mode === mode && this.status().model === model) return;
+    this.mode = mode;
+    this.controller.stop();
+    this.controller.capturedEffort = null;
+    this.controller.turnId = null;
+    this.controller.threadId = null;
+    this.controller.context.reset("");
+    this.record({
+      time: new Date().toISOString(),
+      type: "model_changed",
+      threadId: this.threadId,
+      model,
+      mode,
+    });
   }
   async notification({ method, params: p }) {
     if (["warning", "configWarning"].includes(method)) {
@@ -329,12 +396,11 @@ export class Session {
       return;
     }
     if (p.threadId !== this.threadId) return;
+    if (method === "thread/settings/updated" && p.threadSettings?.model)
+      this.selectModel(p.threadSettings.model);
     const eventTurnId = p.turnId ?? p.turn?.id;
-    if (
-      eventTurnId &&
-      this.controller?.turnId &&
-      eventTurnId !== this.controller.turnId
-    )
+    const currentTurnId = this.turnId ?? this.controller?.turnId;
+    if (eventTurnId && currentTurnId && eventTurnId !== currentTurnId)
       return;
     if (
       method === "hook/completed" &&
@@ -345,7 +411,8 @@ export class Session {
       await this.failCheckpoint();
       return;
     }
-    if (this.controller) await this.controller.handle(method, p);
+    if (this.controller && this.mode !== "inactive")
+      await this.controller.handle(method, p);
     if (
       ["item/started", "item/completed"].includes(method) &&
       ["commandExecution", "fileChange", "mcpToolCall", "webSearch"].includes(
@@ -365,9 +432,18 @@ export class Session {
       this.onText(p.delta);
     }
     if (method === "turn/completed") {
+      if (this.mode === "inactive")
+        this.record({
+          time: new Date().toISOString(),
+          type: "turn_completed",
+          threadId: this.threadId,
+          turnId: p.turn.id,
+          status: p.turn.status,
+        });
       this.waiter?.resolve(p.turn);
       this.running = false;
       this.turnId = null;
+      if (this.selectedModel) this.selectModel(this.selectedModel);
     }
   }
   async serverRequest(message) {
@@ -406,7 +482,7 @@ export class Session {
     });
   }
   async failCheckpoint() {
-    if (this.checkpointFailed || this.closed) return;
+    if (this.checkpointFailed || this.closed || this.mode === "inactive") return;
     this.checkpointFailed = true;
     this.record({
       time: new Date().toISOString(),
@@ -422,6 +498,9 @@ export class Session {
     }
   }
   async checkpoint(event, options) {
+    // The native relay stays attached so Astra can resume later. Other models
+    // pass through without retaining their content or contacting the evaluator.
+    if (this.mode === "inactive") return;
     // Stock child threads inherit the parent's config, including this hook.
     // This controller owns one thread: don't alter another thread's result or
     // send its content to Jev simply because it inherited our local relay.

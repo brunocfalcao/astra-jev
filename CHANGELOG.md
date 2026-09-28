@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.0.2 — 2026-09-28
+
+### Fixes
+- [BUG FIX] Keep the privacy prompt visible during terminal redraws and explicitly explain that YES accepts while Enter alone cancels.
+- [BUG FIX] Allow the native resume picker to reconnect without a WebSocket handshake failure; keep late replies on their original connection.
+- [BUG FIX] Let Esc from the resume picker start a fresh adaptive session with native project permissions, updated live status and cleanup of the unused picker backend.
+- [BUG FIX] Suspend Jev when another model is selected in the native TUI and restore it on return to Astra, preserving native effort settings, conversation ownership and read-only resume permissions.
+
+### Improvements
+- [IMPROVED] Document resume-picker controls and update installation instructions for this release.
+- [IMPROVED] Add regression coverage for consent rendering, hidden key input, connection handoff, fresh-session preparation, observer rebinding and model-switch lifecycle behavior.
+
+This remains a macOS beta for stock Codex 0.157.1. Existing read-only resume policy and known limits remain; a separate clean-Mac trial is still pending.
+
 ## 0.0.1 — 2026-09-28
 
 First tagged public release. The earlier 0.4.x numbers below were preparation versions; community releases start at 0.0.1. This remains an experimental macOS beta.

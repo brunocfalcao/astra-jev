@@ -12,6 +12,8 @@ Known keys and common credential patterns are redacted before truncation. **Reda
 
 The wrapper makes no separate analytics calls. Codex retains its normal account, tools, network behavior and history. This document does not describe or override OpenAI's own data policies.
 
+Switching a managed conversation to a non-Astra model suspends Jev. Those turns do not call the evaluator, and their prompts and tool outputs are not added to its live context. Returning to Astra starts fresh evaluator context; Codex keeps the conversation. If you later reopen saved history in a new managed session, the normal resumed-history policy applies. A model selection made during an active turn applies after that turn finishes.
+
 ## Key setup
 
 Prefer `astra-jev-control setup` or a secret manager that provides `TYPESAFE_API_KEY`. Setup uses hidden input and writes `~/.config/astra-jev/credentials` with owner-only permissions, without overwriting an existing file. It never prints the value. The key is excluded from Codex child environments, wrapper arguments and decision logs.

@@ -88,9 +88,19 @@ export class SessionHost {
         this.owner.send({ event: "approval", id, message });
       });
     };
-    session.transport.on("closed", () => {
+    this.backendEnded = () => {
       void this.close();
-    });
+    };
+    session.transport.on("closed", this.backendEnded);
+  }
+  replaceSession(session) {
+    if (!this.observerOnly || this.session.threadId || this.session.running)
+      throw new Error(
+        "Only a native TUI observer can replace an unselected session",
+      );
+    this.session.transport.off("closed", this.backendEnded);
+    this.session = session;
+    session.transport.on("closed", this.backendEnded);
   }
   async listen() {
     this.server = createServer((socket) => {

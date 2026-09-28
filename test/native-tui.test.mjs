@@ -3,11 +3,80 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { once, EventEmitter } from "node:events";
-import { stat } from "node:fs/promises";
+import { stat, mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
 import { NativeTui } from "../src/native-tui.mjs";
 import WebSocket from "ws";
 import { Session } from "../src/session.mjs";
 import { AppServer } from "../src/app-server.mjs";
+import { SessionHost, SessionClient } from "../src/persistent.mjs";
+
+test("resume picker hands off overlapping connections without misrouting replies or losing ownership", async () => {
+  const transport = new EventEmitter();
+  let finishListing, listingStarted;
+  const listing = new Promise((resolve) => {
+    listingStarted = resolve;
+  });
+  transport.request = async (method) => {
+    assert.equal(method, "thread/list");
+    listingStarted();
+    return new Promise((resolve) => {
+      finishListing = resolve;
+    });
+  };
+  const session = {
+    transport,
+    resumed: true,
+    initialized: { userAgent: "astra_jev/0.157.1 fixture" },
+    controller: { context: { clean: (text) => text } },
+  };
+  const gateway = new NativeTui({ session });
+  const clients = [];
+  const connect = () => {
+    const client = new WebSocket(`ws+unix://${gateway.path}:/rpc`);
+    clients.push(client);
+    return client;
+  };
+  try {
+    await gateway.open();
+    const picker = connect();
+    await once(picker, "open");
+    picker.send(JSON.stringify({ id: 1, method: "thread/list", params: {} }));
+    await listing;
+    const pickerClosed = once(picker, "close");
+    const tui = connect();
+    await once(tui, "open");
+    const messages = [];
+    tui.on("message", (data) => messages.push(JSON.parse(data)));
+    await pickerClosed;
+    assert.equal(gateway.client.readyState, WebSocket.OPEN);
+    finishListing({ data: [{ id: "picker-only-result" }] });
+    const initialized = once(tui, "message");
+    tui.send(JSON.stringify({ id: 1, method: "initialize", params: {} }));
+    assert.deepEqual(JSON.parse((await initialized)[0]), {
+      id: 1,
+      result: session.initialized,
+    });
+    const pong = once(tui, "pong");
+    tui.ping();
+    await pong;
+    assert.deepEqual(messages, [{ id: 1, result: session.initialized }]);
+
+    // Only a resume picker before selection may hand off its connection.
+    for (const state of ["fresh", "opening", "owned"]) {
+      session.resumed = state !== "fresh";
+      gateway.opening = state === "opening";
+      if (state === "owned") session.threadId = "owned-thread";
+      const extra = connect();
+      await assert.rejects(once(extra, "open"), /socket hang up/);
+      assert.equal(tui.readyState, WebSocket.OPEN);
+    }
+  } finally {
+    finishListing?.({ data: [] });
+    for (const client of clients) client.terminate();
+    await gateway.close();
+  }
+});
 
 test("native TUI gateway uses private IPC and retains Jev control and approval decisions", async () => {
   const transport = new AppServer({
@@ -117,15 +186,6 @@ test("native TUI gateway uses private IPC and retains Jev control and approval d
       /different owned/,
     );
     await assert.rejects(
-      () =>
-        rpc("turn/start", {
-          threadId: session.threadId,
-          model: "gpt-6-sol",
-          input: [],
-        }),
-      /Astra only/,
-    );
-    await assert.rejects(
       () => rpc("turn/steer", { threadId: session.threadId, input: [] }),
       /Interrupt/,
     );
@@ -158,7 +218,7 @@ test("native TUI gateway uses private IPC and retains Jev control and approval d
     assert.deepEqual(
       notices.map((x) => x.params.run.entries[0].text),
       [
-        "Jev mode: ADAPTIVE | Permissions: unknown | Require Jev: off",
+      "Jev mode: ADAPTIVE | Permissions: readOnly | Require Jev: off",
         "Astra set to LOW effort (Jev)",
         "Astra changed to HIGH effort (Jev)",
       ],
@@ -389,5 +449,156 @@ test("deferred fresh start preserves native sandbox and configuration before Jev
   } finally {
     await gateway.close();
     await session.close();
+  }
+});
+
+test("Esc from the resume picker prepares a fresh adaptive session and retires the picker backend", async () => {
+  const sessions = [];
+  const starts = [];
+  const createFreshSession = () => {
+    const transport = new AppServer({
+      spawnImpl: (_, args, options) =>
+        spawn(
+          process.execPath,
+          [
+            fileURLToPath(
+              new URL("../fixtures/checkpoint-server.mjs", import.meta.url),
+            ),
+            ...args,
+          ],
+          options,
+        ),
+    });
+    const session = new Session({
+      transport,
+      jev: { decide: async () => ({ effort: "low", leaseSteps: 1 }) },
+    });
+    const request = transport.request.bind(transport);
+    transport.request = (method, params, options) => {
+      if (method === "thread/start") starts.push(params);
+      return request(method, params, options);
+    };
+    sessions.push(session);
+    return session;
+  };
+  const picker = createFreshSession();
+  const directory = await mkdtemp("/tmp/astra-picker-host-");
+  const host = new SessionHost({
+    session: picker,
+    info: {},
+    path: join(directory, "observer.sock"),
+    observerOnly: true,
+  });
+  const observer = new SessionClient({ path: host.path });
+  let current = picker;
+  const gateway = new NativeTui({
+    session: picker,
+    createFreshSession,
+    onSessionChanged: (session) => {
+      current = session;
+      host.replaceSession(session);
+    },
+  });
+  const replies = [];
+  try {
+    await picker.prepare({ resume: true });
+    await host.listen();
+    await gateway.open();
+    gateway.send = (message) => replies.push(message);
+    await gateway.receive(
+      Buffer.from(
+        JSON.stringify({
+          id: 1,
+          method: "thread/start",
+          params: {
+            cwd: "/new-project",
+            sandbox: "read-only",
+            approvalPolicy: "never",
+            config: { web_search: "disabled" },
+          },
+        }),
+      ),
+    );
+    assert.equal(replies[0].error, undefined);
+    assert.notEqual(current, picker);
+    assert.equal(gateway.session, current);
+    assert.equal(picker.closed, true);
+    assert.equal(picker.transport.closed, true);
+    assert.equal(picker.transport.listenerCount("closed"), 0);
+    assert.equal(gateway.backendFailed, undefined);
+    assert.equal(gateway.server.listening, true);
+    assert.equal(current.mode, "adaptive-checkpoint");
+    assert.equal(current.controller.captureEvents, true);
+    assert.equal(current.controller.gated, true);
+    assert.equal(starts.length, 1);
+    assert.equal(starts[0].sandbox, "read-only");
+    assert.equal(starts[0].approvalPolicy, "never");
+    assert.equal(starts[0].cwd, "/new-project");
+    assert.equal(starts[0].config.web_search, "disabled");
+    assert.ok(starts[0].config["hooks.state"]);
+    assert.equal(current.bridge.ready, true);
+    assert.equal(current.transport.listenerCount("closed"), 2);
+    assert.equal(host.server.listening, true);
+    await observer.connect();
+    assert.equal((await observer.status()).mode, "adaptive-checkpoint");
+    assert.equal(replies[0].result.thread.id, current.threadId);
+    await gateway.receive(
+      Buffer.from(JSON.stringify({ id: 2, method: "thread/start" })),
+    );
+    assert.match(replies[1].error.message, /owns one thread/);
+  } finally {
+    observer.close();
+    await gateway.close();
+    await host.close();
+    for (const session of sessions) await session.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("failed or cancelled fresh preparation closes the candidate and preserves the picker", async () => {
+  for (const scenario of ["failure", "shutdown"]) {
+    const picker = { transport: new EventEmitter(), resumed: true };
+    let release, prepared;
+    let closed = 0;
+    const preparing = new Promise((resolve) => {
+      prepared = resolve;
+    });
+    const candidate = {
+      prepare: async () => {
+        prepared();
+        if (scenario === "failure") throw new Error("fixture prepare failure");
+        await new Promise((resolve) => {
+          release = resolve;
+        });
+      },
+      close: async () => {
+        closed++;
+      },
+    };
+    const gateway = new NativeTui({
+      session: picker,
+      createFreshSession: () => candidate,
+      onSessionChanged: () =>
+        assert.fail("Failed preparation must not replace the session"),
+    });
+    try {
+      await gateway.open();
+      const operation = gateway.startFreshSession();
+      const rejected = assert.rejects(
+        operation,
+        /fixture prepare failure|disconnected/,
+      );
+      await preparing;
+      if (scenario === "shutdown") {
+        await gateway.close();
+        release();
+      }
+      await rejected;
+      assert.equal(closed, 1);
+      assert.equal(gateway.session, picker);
+      if (scenario === "failure") assert.equal(gateway.server.listening, true);
+    } finally {
+      await gateway.close();
+    }
   }
 });

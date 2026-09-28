@@ -60,18 +60,20 @@ try {
     );
     log = await open(logPath, "wx", 0o600);
     const record = (event) => writeSync(log.fd, JSON.stringify(event) + "\n");
-    session = new Session({
-      cwd: plan.cwd,
-      nativeUi: true,
-      config: plan.config,
-      fixedEffort: config.fixedEffort,
-      requireJev: config.requireJev,
-      resumePermissions: config.resumePermissions,
-      jev: key ? new Jev({ key }) : null,
-      secrets: key ? [key] : [],
-      logPath,
-      record,
-    });
+    const createSession = () =>
+      new Session({
+        cwd: plan.cwd,
+        nativeUi: true,
+        config: [...plan.config],
+        fixedEffort: config.fixedEffort,
+        requireJev: config.requireJev,
+        resumePermissions: config.resumePermissions,
+        jev: key ? new Jev({ key }) : null,
+        secrets: key ? [key] : [],
+        logPath,
+        record,
+      });
+    session = createSession();
     await session.prepare({ resume: plan.resume });
     const name = `tui-${process.pid}`;
     host = new SessionHost({
@@ -84,13 +86,18 @@ try {
     gateway = new NativeTui({
       session,
       record,
+      createFreshSession: createSession,
+      onSessionChanged: (fresh) => {
+        session = fresh;
+        host.replaceSession(fresh);
+      },
       onOpen: (info) => {
         host.info = info;
       },
     });
     await gateway.open();
     console.error(
-      `Astra-Jev: ${config.fixedEffort ? `FIXED ${config.fixedEffort} effort; Jev inactive` : plan.resume ? "PER-TURN Jev; capture verification unavailable" : "ADAPTIVE Jev checkpoints"}.\n${plan.resume ? `Resume permissions: ${config.resumePermissions}.\n` : ""}Require Jev: ${config.requireJev ? "on" : "off"}\nDecision log: ${logPath}\nLive evidence: astra-jev-control --status ${name}\nWrapper settings: ${join(plan.cwd, "astra-jev.json")}`,
+      `Astra-Jev: ${config.fixedEffort ? `FIXED ${config.fixedEffort} effort; Jev inactive` : plan.resume ? "RESUME PICKER: Enter resumes with per-turn Jev; Esc starts fresh" : "ADAPTIVE Jev checkpoints"}.\n${plan.resume ? `Resume permissions: ${config.resumePermissions}.\n` : ""}Require Jev: ${config.requireJev ? "on" : "off"}\nDecision log: ${logPath}\nLive evidence: astra-jev-control --status ${name}\nWrapper settings: ${join(plan.cwd, "astra-jev.json")}`,
     );
     for (const signal of ["SIGINT", "SIGTERM"]) {
       const handler = () => {

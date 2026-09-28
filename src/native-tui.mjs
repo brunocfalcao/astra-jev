@@ -11,8 +11,20 @@ process.env.WS_NO_UTF_8_VALIDATE = "1";
 const { WebSocketServer, WebSocket } = await import("ws");
 
 export class NativeTui {
-  constructor({ session, record = () => {}, onOpen = () => {} }) {
-    Object.assign(this, { session, record, onOpen });
+  constructor({
+    session,
+    record = () => {},
+    onOpen = () => {},
+    createFreshSession,
+    onSessionChanged = () => {},
+  }) {
+    Object.assign(this, {
+      session,
+      record,
+      onOpen,
+      createFreshSession,
+      onSessionChanged,
+    });
     this.pending = new Map();
     this.nextRequest = 0;
   }
@@ -30,21 +42,32 @@ export class NativeTui {
       maxPayload: 16 * 1024 * 1024,
     });
     this.server.on("upgrade", (request, socket, head) => {
-      if (this.client || request.url !== "/rpc") {
+      // The native resume picker reconnects for the selected conversation.
+      // Its previous socket can still be present when the new upgrade arrives.
+      const pickerHandoff =
+        this.session.resumed && !this.session.threadId && !this.opening;
+      if ((this.client && !pickerHandoff) || request.url !== "/rpc") {
         socket.destroy();
         return;
       }
       this.websocket.handleUpgrade(request, socket, head, (client) => {
+        const previous = this.client;
         this.client = client;
+        if (previous) {
+          for (const resolve of this.pending.values()) resolve(undefined);
+          this.pending.clear();
+          previous.terminate();
+        }
         client.on("error", () => {});
         client.on("message", (data, binary) => {
           if (binary) {
             client.close(1003);
             return;
           }
-          void this.receive(data).catch(() => client.close(1007));
+          void this.receive(data, client).catch(() => client.close(1007));
         });
         client.on("close", () => {
+          if (this.client !== client) return;
           this.client = null;
           for (const resolve of this.pending.values()) resolve(undefined);
           this.pending.clear();
@@ -53,7 +76,23 @@ export class NativeTui {
         });
       });
     });
+    this.bindSession(this.session);
+    await new Promise((resolve, reject) => {
+      this.server.once("error", reject);
+      this.server.listen(this.path, resolve);
+    });
+    await chmod(this.path, 0o600);
+    return `unix://${this.path}`;
+  }
+  bindSession(session) {
+    this.session = session;
     this.forward = (message) => {
+      if (
+        this.session.mode === "inactive" &&
+        ["hook/started", "hook/completed"].includes(message.method) &&
+        this.session.bridge?.ownsRun(message.params?.run)
+      )
+        return;
       if (
         ["rawResponseItem/completed", "rawResponse/completed"].includes(
           message.method,
@@ -88,7 +127,8 @@ export class NativeTui {
       void this.close();
     };
     this.session.transport.on("closed", this.backendEnded);
-    this.session.onRequest = (message) => {
+    this.previousOnRequest = this.session.onRequest;
+    this.onRequest = (message) => {
       if (!this.client) return undefined;
       return new Promise((resolve) => {
         const id = `astra-jev-${++this.nextRequest}`;
@@ -96,18 +136,54 @@ export class NativeTui {
         this.send({ ...message, id });
       });
     };
-    await new Promise((resolve, reject) => {
-      this.server.once("error", reject);
-      this.server.listen(this.path, resolve);
-    });
-    await chmod(this.path, 0o600);
-    return `unix://${this.path}`;
+    this.session.onRequest = this.onRequest;
   }
-  send(message) {
-    if (this.client?.readyState === WebSocket.OPEN)
-      this.client.send(JSON.stringify(message));
+  unbindSession() {
+    if (this.session.onEvent === this.onEvent)
+      this.session.onEvent = this.previousOnEvent;
+    if (this.session.onRequest === this.onRequest)
+      this.session.onRequest = this.previousOnRequest;
+    if (this.forward) this.session.transport.off("notification", this.forward);
+    if (this.backendEnded)
+      this.session.transport.off("closed", this.backendEnded);
   }
-  async receive(data) {
+  async startFreshSession(client) {
+    if (!this.session.resumed || this.session.threadId)
+      throw new Error(
+        "Only an unselected resume picker can start a fresh session",
+      );
+    if (!this.createFreshSession)
+      throw new Error("Start a new adaptive session with astra-jev");
+    const fresh = this.createFreshSession();
+    try {
+      await fresh.prepare();
+      if (
+        this.closing ||
+        (client &&
+          (client !== this.client || client.readyState !== WebSocket.OPEN))
+      )
+        throw new Error(
+          "Native client disconnected while starting a fresh session",
+        );
+    } catch (error) {
+      await fresh.close();
+      throw error;
+    }
+    const previous = this.session;
+    this.unbindSession();
+    this.bindSession(fresh);
+    try {
+      this.onSessionChanged(fresh);
+    } finally {
+      await previous.close();
+    }
+  }
+  send(message, client = this.client) {
+    if (client?.readyState === WebSocket.OPEN)
+      client.send(JSON.stringify(message));
+  }
+  async receive(data, client = this.client) {
+    if (client !== this.client) return;
     const message = JSON.parse(data.toString());
     if (!message || typeof message !== "object" || Array.isArray(message))
       throw new Error("Invalid message");
@@ -134,6 +210,8 @@ export class NativeTui {
           throw new Error("Thread selection is already in progress");
         this.opening = true;
         try {
+          if (method === "thread/start" && this.session.resumed)
+            await this.startFreshSession(client);
           const info = await this.session.open({
             resume: method === "thread/resume" ? params.threadId : undefined,
             params,
@@ -178,12 +256,21 @@ export class NativeTui {
         this.requireThread(params);
         startingTurn = !this.session.running;
         result = await this.session.startTurn(params);
+      } else if (method === "thread/settings/update") {
+        this.requireThread(params);
+        result = await this.session.updateSettings(params);
+      } else if (
+        this.session.mode === "inactive" &&
+        ["turn/settings/update", "turn/steer"].includes(method)
+      ) {
+        this.requireThread(params);
+        result = await this.session.transport.request(method, params);
       } else if (method === "thread/resume") {
         this.requireThread(params);
         result = await this.session.transport.request(method, {
           ...params,
           ...this.session.threadOptions,
-          model: "gpt-6-astra",
+          model: this.session.selectedModel ?? "gpt-6-astra",
           config: { ...params.config, ...this.session.hookConfig },
         });
         this.attached = true;
@@ -208,16 +295,19 @@ export class NativeTui {
           this.requireThread(params);
         result = await this.session.transport.request(method, params);
       }
-      this.send({ id, result });
+      this.send({ id, result }, client);
     } catch (error) {
       if (startingTurn) this.effortNotices.finish();
-      this.send({
-        id,
-        error: {
-          code: -32602,
-          message: this.session.controller.context.clean(error.message, 500),
+      this.send(
+        {
+          id,
+          error: {
+            code: -32602,
+            message: this.session.controller.context.clean(error.message, 500),
+          },
         },
-      });
+        client,
+      );
     }
   }
   requireThread(params) {
@@ -262,12 +352,7 @@ export class NativeTui {
   close() {
     if (this.closing) return this.closing;
     this.closing = (async () => {
-      if (this.session.onEvent === this.onEvent)
-        this.session.onEvent = this.previousOnEvent;
-      if (this.forward)
-        this.session.transport.off("notification", this.forward);
-      if (this.backendEnded)
-        this.session.transport.off("closed", this.backendEnded);
+      this.unbindSession();
       if (this.child && this.child.exitCode === null && !this.child.signalCode)
         this.child.kill("SIGTERM");
       this.client?.terminate();
