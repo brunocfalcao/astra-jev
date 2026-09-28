@@ -226,8 +226,8 @@ test("native TUI gateway uses private IPC and retains Jev control and approval d
       /different owned/,
     );
     await assert.rejects(
-      () => rpc("turn/steer", { threadId: session.threadId, input: [] }),
-      /Interrupt/,
+      () => rpc("turn/steer", { threadId: "foreign", input: [] }),
+      /different owned/,
     );
     await rpc("turn/start", {
       threadId: session.threadId,
@@ -254,10 +254,7 @@ test("native TUI gateway uses private IPC and retains Jev control and approval d
     );
     assert.deepEqual(
       notices.map((x) => x.params.run.entries[0].text),
-      [
-        "Astra set to LOW effort (Jev)",
-        "Astra changed to HIGH effort (Jev)",
-      ],
+      ["Astra set to LOW effort (Jev)", "Astra changed to HIGH effort (Jev)"],
     );
     assert.equal(
       observed.filter((x) => x.type === "decision_selected").length,
@@ -330,31 +327,25 @@ test("native TUI shutdown declines pending input and removes its private socket"
 });
 
 test("deferred resume lets Codex inspect candidates and opens only the selected thread", async () => {
-  const transport = new EventEmitter();
-  transport.config = [];
-  transport.connect = async () => ({ userAgent: "astra_jev/0.157.1 fixture" });
-  transport.close = async () => {};
-  const requests = [];
-  transport.request = async (method, params) => {
-    requests.push({ method, params });
-    if (method === "model/list")
-      return {
-        data: [
-          {
-            model: "gpt-6-astra",
-            defaultReasoningEffort: "high",
-            supportedReasoningEfforts: [{ reasoningEffort: "high" }],
-          },
+  const transport = new AppServer({
+    spawnImpl: (_, args, opts) =>
+      spawn(
+        process.execPath,
+        [
+          fileURLToPath(
+            new URL("../fixtures/checkpoint-server.mjs", import.meta.url),
+          ),
+          ...args,
         ],
-      };
+        opts,
+      ),
+  });
+  const requests = [];
+  const request = transport.request.bind(transport);
+  transport.request = async (method, params, options) => {
+    requests.push({ method, params });
     if (method === "thread/read") return { thread: { id: params.threadId } };
-    if (method === "thread/resume")
-      return {
-        model: "gpt-6-astra",
-        thread: { id: params.threadId, turns: [] },
-        sandbox: { type: "readOnly" },
-      };
-    return {};
+    return request(method, params, options);
   };
   const session = new Session({
     transport,
@@ -395,9 +386,9 @@ test("deferred resume lets Codex inspect candidates and opens only the selected 
       cwd: "/project",
       config: { web_search: "disabled" },
     });
-    assert.equal(selected.result.thread.id, "selected");
-    assert.equal(session.threadId, "selected");
-    assert.equal(opened.mode, "turn-only-resume");
+    assert.equal(selected.result.thread.id, "thread-checkpoint");
+    assert.equal(session.threadId, "thread-checkpoint");
+    assert.equal(opened.mode, "adaptive-resume");
     assert.equal(session.controller.captureEvents, false);
     assert.deepEqual(
       requests.find((x) => x.method === "thread/resume").params,
@@ -405,7 +396,7 @@ test("deferred resume lets Codex inspect candidates and opens only the selected 
         threadId: "selected",
         cwd: "/project",
         model: "gpt-6-astra",
-        config: { web_search: "disabled" },
+        config: { web_search: "disabled", ...session.hookConfig },
       },
     );
     assert.match(

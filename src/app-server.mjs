@@ -4,6 +4,22 @@ import { EventEmitter } from "node:events";
 import { redact } from "./context.mjs";
 import packageInfo from "../package.json" with { type: "json" };
 
+// Native clients interpret structured RPC errors (including steering races).
+// Redact strings without dropping fields or changing their JSON types.
+function redactErrorData(value, secrets) {
+  if (typeof value === "string") return redact(value, secrets);
+  if (Array.isArray(value))
+    return value.map((x) => redactErrorData(x, secrets));
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        redactErrorData(item, secrets),
+      ]),
+    );
+  return value;
+}
+
 export class AppServer extends EventEmitter {
   constructor({
     binary = "codex",
@@ -82,16 +98,14 @@ export class AppServer extends EventEmitter {
       if (!p) return;
       clearTimeout(p.timer);
       this.pending.delete(message.id);
-      message.error
-        ? p.reject(
-            new Error(
-              redact(
-                `Codex ${p.method}: ${message.error.message}`,
-                this.secrets,
-              ).slice(0, 500),
-            ),
-          )
-        : p.resolve(message.result);
+      if (message.error) {
+        const rpcError = redactErrorData(message.error, this.secrets);
+        const error = new Error(
+          `Codex ${p.method}: ${rpcError.message}`.slice(0, 500),
+        );
+        error.rpcError = rpcError;
+        p.reject(error);
+      } else p.resolve(message.result);
     });
     const result = await this.request("initialize", {
       clientInfo: {

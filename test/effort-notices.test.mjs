@@ -87,8 +87,8 @@ test("initial, resumed and late captures preserve their evidence level", () => {
   resumed.select("low");
   resumed.event("turn_completed");
   assert.deepEqual(resumed.text(), [
-    "Jev selected HIGH effort for this turn",
-    "Jev selected LOW effort for this turn",
+    "Jev selected HIGH effort",
+    "Jev selected LOW effort",
   ]);
 });
 
@@ -178,5 +178,27 @@ test("normal turns never emit mode or permission banners", () => {
     });
     notices.handle({ type: "turn_completed", threadId: "owned" });
   }
-  assert.deepEqual(messages, ["Jev selected MEDIUM effort for this turn"]);
+  assert.deepEqual(messages, ["Jev selected MEDIUM effort"]);
+});
+
+test("resumed mid-turn notices wait for publication and do not claim capture", () => {
+  const f = setup({ captureEvents: false });
+  f.select("low");
+  f.select("high", null);
+  assert.deepEqual(f.text(), ["Jev selected LOW effort"]);
+  f.event("update_published", { effort: "high", targetGeneration: null });
+  assert.deepEqual(f.text(), [
+    "Jev selected LOW effort",
+    "Jev selected HIGH effort for the next step",
+  ]);
+  f.select("high", null);
+  f.event("effort_retained", { effort: "high" });
+  assert.equal(f.text().length, 2);
+  f.select("medium", null);
+  f.event("update_unavailable");
+  assert.equal(f.text()[2], "Jev selected MEDIUM effort; change unconfirmed");
+  const quiet = setup({ captureEvents: false, verbose: false });
+  quiet.select("high", null);
+  quiet.event("update_published", { effort: "high", targetGeneration: null });
+  assert.deepEqual(quiet.text(), []);
 });

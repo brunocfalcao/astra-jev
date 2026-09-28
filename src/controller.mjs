@@ -61,6 +61,8 @@ export class Controller {
     this.issuedGeneration = 0;
     this.lastCheckpointGeneration = 0;
     this.assessedFailures = 0;
+    this.inputRevision = 0;
+    this.requestedEffort = null;
     if (continuing) this.context.nextTurn(prompt);
     else this.context.reset(prompt);
     this.context.imageCount = imageCount;
@@ -103,7 +105,12 @@ export class Controller {
       throw new Error("Turn cancelled");
     if (!this.supportedEfforts.includes(decision.effort))
       throw new Error("No supported fallback effort");
-    this.log("decision_selected", { ...decision, targetGeneration: 1 });
+    this.requestedEffort = decision.effort;
+    this.log("decision_selected", {
+      ...decision,
+      targetGeneration: 1,
+      leaseApplied: this.captureEvents,
+    });
     this.pending = this.captureEvents
       ? { ...decision, targetGeneration: 1, initial: true }
       : null;
@@ -116,6 +123,15 @@ export class Controller {
   }
   attach(turnId) {
     if (this.active && !this.turnId) this.turnId = turnId;
+  }
+  addInput({ prompt, imageCount }) {
+    if (!this.active) return;
+    this.inputRevision++;
+    this.context.addPrompt(prompt);
+    this.context.imageCount = (this.context.imageCount ?? 0) + imageCount;
+    this.remaining = 0;
+    if (this.pending) this.pending.invalidated = true;
+    this.log("input_steered", { contextStats: this.context.stats() });
   }
   async handle(method, p) {
     if (p.threadId !== this.threadId) return;
@@ -160,6 +176,17 @@ export class Controller {
       this.context.setPlan(p);
       return;
     }
+    if (
+      !this.captureEvents &&
+      method === "item/completed" &&
+      p.item?.type === "agentMessage"
+    )
+      this.context.add({
+        type: "message",
+        role: "assistant",
+        phase: p.item.phase ?? "final_answer",
+        content: [{ type: "output_text", text: p.item.text }],
+      });
     if (
       method === "item/completed" &&
       (["failed", "declined"].includes(p.item?.status) ||
@@ -249,13 +276,16 @@ export class Controller {
       : this.abort.signal;
     const run = async () => {
       this.context.addHook(event);
+      // Resume has no raw generation stream. Reassess each distinct local
+      // checkpoint, and invalidate a judgment if parallel evidence arrives.
+      if (!this.captureEvents) this.inputRevision++;
       this.log("checkpoint_started", {
         tool: this.context.clean(event.tool_name, 120),
         completedGenerations: this.completedGenerations,
       });
       // Tools can finish while their issuing response is still streaming.
       const issuing = Math.max(1, this.issuedGeneration);
-      if (this.completedGenerations < issuing)
+      if (this.captureEvents && this.completedGenerations < issuing)
         await new Promise((resolve, reject) => {
           const cleanup = () => {
             this.generationWaiters.delete(wake);
@@ -280,12 +310,14 @@ export class Controller {
         throw new Error("Checkpoint cancelled");
       this.lastCheckpointGeneration = this.completedGenerations;
       if (this.inFlight) await this.inFlight;
-      else if (this.remaining === 0 && !this.pending)
+      else if (!this.captureEvents || (this.remaining === 0 && !this.pending))
         await this.evaluate({ signal: combined });
       if (combined.aborted || !this.active || this.revision !== revision)
         throw new Error("Checkpoint cancelled");
       this.log("checkpoint_released", {
-        targetGeneration: this.completedGenerations + 1,
+        targetGeneration: this.captureEvents
+          ? this.completedGenerations + 1
+          : null,
       });
     };
     const pending = run();
@@ -296,11 +328,14 @@ export class Controller {
     if (this.inFlight) return this.inFlight;
     const revision = this.revision,
       turnId = this.turnId,
-      targetGeneration = this.completedGenerations + 1;
+      targetGeneration = this.captureEvents
+        ? this.completedGenerations + 1
+        : null;
     const run = async () => {
       let stage = "evaluation";
       try {
         const failures = this.context.failures.size;
+        const inputRevision = this.inputRevision;
         this.log("evaluation_requested", {
           targetGeneration,
           contextStats: this.context.stats(),
@@ -308,7 +343,9 @@ export class Controller {
         const decision = await this.jev.decide(
           this.context.state({
             supportedEfforts: this.supportedEfforts,
-            previousEffort: this.capturedEffort,
+            previousEffort: this.captureEvents
+              ? this.capturedEffort
+              : this.requestedEffort,
             step: targetGeneration,
             newToolFailures: failures - this.assessedFailures,
           }),
@@ -326,19 +363,36 @@ export class Controller {
           });
           return;
         }
+        if (inputRevision !== this.inputRevision) {
+          this.log("decision_discarded", {
+            targetGeneration,
+            reason: "Evaluation context changed",
+          });
+          return run();
+        }
         if (!this.valid(decision)) throw new Error("Invalid Jev decision");
         this.assessedFailures = failures;
-        this.log("decision_selected", { ...decision, targetGeneration });
+        this.log("decision_selected", {
+          ...decision,
+          targetGeneration,
+          leaseApplied: this.captureEvents,
+        });
         const invalidated = this.context.failures.size > failures;
-        if (decision.effort === this.capturedEffort) {
-          this.remaining = invalidated ? 0 : decision.leaseSteps;
+        const previous = this.captureEvents
+          ? this.capturedEffort
+          : this.requestedEffort;
+        if (decision.effort === previous) {
+          this.remaining =
+            this.captureEvents && !invalidated ? decision.leaseSteps : 0;
           this.log("effort_retained", {
             effort: decision.effort,
             leaseSteps: decision.leaseSteps,
           });
           return;
         }
-        this.pending = { ...decision, targetGeneration, invalidated };
+        this.pending = this.captureEvents
+          ? { ...decision, targetGeneration, invalidated }
+          : null;
         stage = "publication";
         let result;
         try {
@@ -377,10 +431,15 @@ export class Controller {
             throw new Error("Required Jev update was not applied");
           return;
         }
+        this.requestedEffort = decision.effort;
         this.log("update_published", {
           effort: decision.effort,
           targetGeneration,
         });
+        // Another resumed tool may finish while Codex acknowledges this
+        // update. Assess that evidence before releasing either checkpoint.
+        if (!this.captureEvents && inputRevision !== this.inputRevision)
+          return run();
       } catch (e) {
         if (revision !== this.revision) return;
         this.pending = null;

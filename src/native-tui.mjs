@@ -262,9 +262,12 @@ export class NativeTui {
       } else if (method === "thread/settings/update") {
         this.requireThread(params);
         result = await this.session.updateSettings(params);
+      } else if (method === "turn/steer") {
+        this.requireThread(params);
+        result = await this.session.steerTurn(params);
       } else if (
         this.session.mode === "inactive" &&
-        ["turn/settings/update", "turn/steer"].includes(method)
+        method === "turn/settings/update"
       ) {
         this.requireThread(params);
         result = await this.session.transport.request(method, params);
@@ -279,13 +282,9 @@ export class NativeTui {
           },
         });
         this.attached = true;
-      } else if (
-        ["thread/start", "thread/fork", "turn/steer"].includes(method)
-      ) {
+      } else if (["thread/start", "thread/fork"].includes(method)) {
         throw new Error(
-          method === "turn/steer"
-            ? "Jev cannot safely reassess steered input on this stock API yet. Interrupt the turn, then send the follow-up."
-            : "This controller owns one thread. Start another astra-jev session for a new or forked thread.",
+          "This controller owns one thread. Start another astra-jev session for a new or forked thread.",
         );
       } else if (method === "thread/unsubscribe")
         result = { status: "notSubscribed" }; // Retain the controller's raw subscription until its host exits.
@@ -306,7 +305,7 @@ export class NativeTui {
       this.send(
         {
           id,
-          error: {
+          error: error.rpcError ?? {
             code: -32602,
             message: this.session.controller.context.clean(error.message, 500),
           },

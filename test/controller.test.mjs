@@ -62,6 +62,84 @@ async function start(c) {
   await raw(c, { type: "configuration_update", reasoning: { effort: "low" } });
 }
 
+test("accepted steering expires the lease without clearing tool correlation, failures or generation state", async () => {
+  const { c } = setup([{ effort: "low", leaseSteps: 10 }]);
+  await start(c);
+  await raw(c, {
+    type: "function_call",
+    call_id: "pending-read",
+    name: "read",
+    arguments: "{}",
+  });
+  c.context.addFailure({
+    id: "failure",
+    type: "commandExecution",
+    status: "failed",
+    exitCode: 1,
+  });
+  await complete(c, "r1");
+  assert.equal(c.remaining, 9);
+  c.addInput({ prompt: "$astra-jev doctor", imageCount: 1 });
+  assert.equal(c.remaining, 0);
+  assert.equal(c.active, true);
+  assert.equal(c.turnId, "turn-a");
+  assert.equal(c.completedGenerations, 1);
+  assert.equal(c.responses.size, 1);
+  assert.equal(c.issuedGeneration, 1);
+  assert.equal(c.context.calls.has("pending-read"), true);
+  assert.equal(c.context.failures.size, 1);
+  assert.equal(c.context.prompt, "$astra-jev doctor");
+  assert.equal(c.context.imageCount, 1);
+  assert.equal(c.context.originalPrompt, "Synthetic task");
+});
+
+test("steering invalidates a published lease even when its native capture arrives later", async () => {
+  const { c } = setup([
+    { effort: "low", leaseSteps: 1 },
+    { effort: "high", leaseSteps: 10 },
+  ]);
+  await start(c);
+  await complete(c, "r1");
+  await c.evaluate();
+  assert.equal(c.pending.effort, "high");
+  c.addInput({ prompt: "New task", imageCount: 0 });
+  await raw(c, { type: "configuration_update", reasoning: { effort: "high" } });
+  assert.equal(c.capturedEffort, "high");
+  assert.equal(c.pending, null);
+  assert.equal(c.remaining, 0);
+});
+
+test("steering during Jev evaluation discards stale text or image decisions before publishing", async () => {
+  for (const input of [
+    { prompt: "Changed request", imageCount: 0 },
+    { prompt: "", imageCount: 1 },
+  ]) {
+    const d = deferred();
+    const { c, calls, logs } = setup([
+      { effort: "low", leaseSteps: 1 },
+      d.promise,
+      { effort: "low", leaseSteps: 2 },
+    ]);
+    await start(c);
+    await complete(c, "r1");
+    const evaluation = c.evaluate();
+    c.addInput(input);
+    d.resolve({ effort: "high", leaseSteps: 10 });
+    await evaluation;
+    assert.deepEqual(calls, [], "stale effort must never be published");
+    assert.equal(c.remaining, 2, "only the reassessed decision gets a lease");
+    assert.ok(
+      logs.some(
+        (x) => x.type === "decision_discarded" && /context/i.test(x.reason),
+      ),
+    );
+    assert.equal(
+      logs.filter((x) => x.type === "evaluation_requested").length,
+      3,
+    );
+  }
+});
+
 test("publishing high does not label it captured until the native configuration event arrives", async () => {
   const { c, logs, calls } = setup();
   await start(c);

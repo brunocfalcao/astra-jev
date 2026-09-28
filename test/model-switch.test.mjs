@@ -281,7 +281,7 @@ test("resumed and fixed sessions restore their original Astra policy after a mod
       assert.match(modeLabel(f.session.status()), /INACTIVE/);
       await f.turn({ model: "gpt-6-astra" });
       assert.equal(f.session.mode, originalMode);
-      assert.equal(f.states.length, policy === "fixed" ? 0 : 1);
+      assert.equal(f.states.length, policy === "fixed" ? 0 : 2);
       const sent = f.requests
         .filter((r) => r.method === "turn/start")
         .at(-1).params;
@@ -426,7 +426,7 @@ test("quiet TUI keeps fresh and resumed Jev decisions, status and model-switch n
       await f.turn({ model: "gpt-6-astra" });
       await f.turn({ model: "gpt-6-astra" });
       assert.deepEqual(notices(), []);
-      const evaluations = resume ? 2 : 4;
+      const evaluations = 4;
       assert.equal(f.states.length, evaluations);
       assert.equal(
         f.records.filter((event) => event.type === "decision_selected").length,
@@ -446,7 +446,7 @@ test("quiet TUI keeps fresh and resumed Jev decisions, status and model-switch n
         "Jev inactive for the selected model; select Astra to reactivate",
         "Jev active for Astra again",
       ]);
-      assert.equal(f.states.length, evaluations + (resume ? 1 : 2));
+      assert.equal(f.states.length, evaluations + 2);
     } finally {
       await f.close();
     }
@@ -487,7 +487,7 @@ test("completion delivered before the turn-start continuation cannot restore a f
         assert.equal(f.session.running, false);
         assert.equal(f.session.turnId, null);
       }
-      assert.equal(f.states.length, model === "gpt-6-astra" ? 3 : 0);
+      assert.equal(f.states.length, model === "gpt-6-astra" ? 6 : 0);
     } finally {
       await f.close();
     }

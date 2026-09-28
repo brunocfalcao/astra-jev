@@ -94,7 +94,7 @@ try {
     });
     await gateway.open();
     console.error(
-      `Astra-Jev: ${config.fixedEffort ? `FIXED ${config.fixedEffort} effort; Jev inactive` : plan.resume ? "RESUME PICKER: Enter resumes with per-turn Jev; Esc starts fresh" : "ADAPTIVE Jev checkpoints"}.\nRequire Jev: ${config.requireJev ? "on" : "off"}\nDecision log: ${logPath}\nLive evidence: astra-jev-control --status ${name}\nWrapper settings: ${join(plan.cwd, "astra-jev.json")}`,
+      `Astra-Jev: ${config.fixedEffort ? `FIXED ${config.fixedEffort} effort; Jev inactive` : plan.resume ? "RESUME PICKER: Enter resumes with adaptive Jev; Esc starts fresh" : "ADAPTIVE Jev checkpoints"}.\nRequire Jev: ${config.requireJev ? "on" : "off"}\nDecision log: ${logPath}\nLive evidence: astra-jev-control --status ${name}\nWrapper settings: ${join(plan.cwd, "astra-jev.json")}`,
     );
     for (const signal of ["SIGINT", "SIGTERM"]) {
       const handler = () => {

@@ -123,6 +123,12 @@ export class Context {
     this.hookOutputs = new Set();
   }
   nextTurn(prompt) {
+    this.addPrompt(prompt);
+    this.failures.clear();
+    this.calls.clear();
+    this.hookOutputs.clear();
+  }
+  addPrompt(prompt) {
     if (this.prompt) this.prior.push(this.clean(this.prompt, 2000));
     this.prior = this.prior.slice(-3);
     const bounded = this.bounded(prompt, 8000);
@@ -133,9 +139,6 @@ export class Context {
       this.originalPromptTruncated = this.promptTruncated;
     }
     if (this.prompt) this.userPromptCount++;
-    this.failures.clear();
-    this.calls.clear();
-    this.hookOutputs.clear();
   }
   addHook(event) {
     this.hookOutputs.add(event.tool_use_id);

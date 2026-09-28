@@ -44,15 +44,33 @@ export class EffortNotices {
         return;
       const decision = { ...event, startedAt: this.evaluation?.time };
       if (!this.session.controller.captureEvents) {
+        if (event.targetGeneration !== 1) {
+          this.pending = this.selected === event.effort ? null : decision;
+          return;
+        }
         if (this.selected === event.effort) return;
         this.selected = event.effort;
         this.show(
           decision,
           "selected",
-          `Jev selected ${event.effort.toUpperCase()} effort for this turn`,
+          `Jev selected ${event.effort.toUpperCase()} effort`,
         );
       } else if (event.effort !== this.captured) this.pending = decision;
       else this.pending = null;
+    }
+    if (
+      event.type === "update_published" &&
+      !this.session.controller.captureEvents &&
+      this.pending?.effort === event.effort
+    ) {
+      this.selected = event.effort;
+      const decision = this.pending;
+      this.pending = null;
+      this.show(
+        decision,
+        "selected",
+        `Jev selected ${event.effort.toUpperCase()} effort for the next step`,
+      );
     }
     if (event.type === "effort_captured") {
       const previous = this.captured;

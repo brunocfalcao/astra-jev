@@ -63,7 +63,7 @@ export class Session {
   }
   async prepare({ resume } = {}) {
     this.resumed = !!resume;
-    const gated = !resume && !this.fixedEffort;
+    const gated = !this.fixedEffort;
     if (gated) {
       this.bridge = new HookBridge({
         checkpoint: (event, options) => this.checkpoint(event, options),
@@ -126,7 +126,7 @@ export class Session {
       throw new Error("Thread selection does not match this launch mode");
     if (params.model && params.model !== "gpt-6-astra")
       throw new Error("This session uses Astra only");
-    const gated = !resume && !this.fixedEffort;
+    const gated = !this.fixedEffort;
     const hookConfig = this.hookConfig;
     const options = {
       ...params,
@@ -153,20 +153,21 @@ export class Session {
     this.threadPath = result.thread.path;
     this.controller.threadId = this.threadId;
     if (resume) this.controller.context.hydrate(result.thread.turns);
-    this.mode = resume
-      ? "turn-only-resume"
-      : this.fixedEffort
-        ? "fixed"
+    this.mode = this.fixedEffort
+      ? "fixed"
+      : resume
+        ? "adaptive-resume"
         : "adaptive-checkpoint";
-    if (resume)
+    if (resume && !this.fixedEffort)
       this.onNotice(
-        "Resumed session: Jev selects effort per turn. Stock Codex 0.157.1 does not expose raw generation events on resume; live adaptation and capture verification are unavailable.",
+        "Resumed session: Jev reassesses at supported tool checkpoints. Native generation counts and live capture confirmation are unavailable on resume.",
       );
     this.record({
       time: new Date().toISOString(),
       type: "session_opened",
       threadId: this.threadId,
       mode: this.mode,
+      captureAvailable: this.controller.captureEvents,
       model: "gpt-6-astra",
       policy: this.fixedEffort ?? "auto",
       sandbox: result.sandbox?.type ?? "unknown",
@@ -315,6 +316,31 @@ export class Session {
       throw error;
     }
   }
+  async steerTurn(params) {
+    const result = await this.transport.request("turn/steer", params);
+    const acceptedTurnId = result.turnId;
+    // Completion or a new turn can race this acknowledgement. Do not revive
+    // an old controller or apply old input to its replacement.
+    if (
+      this.mode !== "inactive" &&
+      this.running &&
+      this.controller.active &&
+      acceptedTurnId === this.turnId &&
+      acceptedTurnId === this.controller.turnId
+    ) {
+      const input = params.input ?? [];
+      this.controller.addInput({
+        prompt: input
+          .filter((x) => x.type === "text")
+          .map((x) => x.text)
+          .join("\n"),
+        imageCount: input.filter((x) =>
+          ["localImage", "image"].includes(x.type),
+        ).length,
+      });
+    }
+    return result;
+  }
   requestedModel(params = {}) {
     // Stock Codex gives collaboration settings precedence over the top-level model.
     return (
@@ -342,10 +368,10 @@ export class Session {
     const mode =
       model !== "gpt-6-astra"
         ? "inactive"
-        : this.resumed
-          ? "turn-only-resume"
-          : this.fixedEffort
-            ? "fixed"
+        : this.fixedEffort
+          ? "fixed"
+          : this.resumed
+            ? "adaptive-resume"
             : "adaptive-checkpoint";
     if (this.mode === mode && this.status().model === model) return;
     this.mode = mode;
@@ -372,8 +398,7 @@ export class Session {
       this.selectModel(p.threadSettings.model);
     const eventTurnId = p.turnId ?? p.turn?.id;
     const currentTurnId = this.turnId ?? this.controller?.turnId;
-    if (eventTurnId && currentTurnId && eventTurnId !== currentTurnId)
-      return;
+    if (eventTurnId && currentTurnId && eventTurnId !== currentTurnId) return;
     if (
       method === "hook/completed" &&
       this.controller?.active &&
@@ -454,7 +479,8 @@ export class Session {
     });
   }
   async failCheckpoint() {
-    if (this.checkpointFailed || this.closed || this.mode === "inactive") return;
+    if (this.checkpointFailed || this.closed || this.mode === "inactive")
+      return;
     this.checkpointFailed = true;
     this.record({
       time: new Date().toISOString(),

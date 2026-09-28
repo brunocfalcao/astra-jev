@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.0.7 — 2026-09-28
+
+- Restore mid-turn Jev adaptation on resumed conversations through native synchronous tool checkpoints. Reassess each supported tool result without inventing generation counts or capture confirmation; preserve native permissions and quiet notices.
+- Fix native TUI exits when sending follow-up input or invoking `$astra-jev doctor` during an active Astra turn.
+- Preserve native RPC error codes, messages and structured data, with known-secret redaction, so Codex can recover from steering races and queue input during non-steerable operations.
+- Include accepted follow-ups in Jev's bounded context without resetting the active turn, tool correlation or failure evidence. Expire stale leases and reassess decisions when input changes during evaluation.
+- Keep rejected input and delayed replies from changing the current turn's context. Fixed-effort and non-Astra turns continue without extra Jev calls.
+- Clarify personal API-key setup, follow-up behavior, and the difference between a responding evaluator and a progressing Astra turn.
+
+**Upgrade:** restart Astra-Jev after installing. This remains a macOS beta for stock Codex 0.157.1. Resumed conversations now adapt mid-turn at supported tool checkpoints. Native live capture verification and generation counts remain unavailable, so generation leases are unused and evaluator requests can be more frequent. Independent clean-Mac authentication testing is still pending.
+
 ## 0.0.6 — 2026-09-28
 
 - Add the bundled `$astra-jev` Codex skill for project configuration, doctor checks and live status. Setup and managed launches install it automatically; custom copies and edits are preserved.

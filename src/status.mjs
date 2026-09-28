@@ -28,6 +28,7 @@ export class Status {
     if (event.type === "session_opened")
       Object.assign(v, {
         mode: event.mode,
+        captureAvailable: event.captureAvailable,
         model: event.model,
         policy: event.policy ?? "auto",
         phase: "ready",
@@ -59,6 +60,7 @@ export class Status {
     if (event.type === "decision_selected") {
       v.selectedEffort = event.effort;
       v.leaseSteps = event.leaseSteps;
+      v.leaseApplied = event.leaseApplied;
       v.targetGeneration = event.targetGeneration;
       if (event.evaluatedModel) {
         v.jev = "responding";
@@ -73,7 +75,10 @@ export class Status {
       }
       v.phase = "running";
     }
-    if (event.type === "update_published") v.phase = "waiting for capture";
+    if (event.type === "update_published") {
+      v.phase =
+        v.captureAvailable === false ? "running" : "waiting for capture";
+    }
     if (event.type === "effort_captured") {
       v.capturedEffort = event.effort;
       v.captureGeneration = event.generation;
@@ -119,10 +124,17 @@ export class Status {
 }
 
 export function statusLines(s) {
+  const captureUnavailable =
+    s.captureAvailable === false ||
+    ["adaptive-resume", "turn-only-resume"].includes(s.mode);
+  const lease =
+    s.leaseApplied === false
+      ? "Reassess at each supported checkpoint; generation lease unused"
+      : `Lease: ${s.leaseSteps} generation(s)${s.leaseLimitedByUncertainty ? " (shortened for uncertainty)" : ""}`;
   const effort =
     s.mode === "inactive"
       ? "inactive for selected model"
-      : s.mode === "turn-only-resume"
+      : captureUnavailable
         ? "unverified on resumed thread"
         : (s.capturedEffort ?? "awaiting native capture");
   return [
@@ -133,12 +145,14 @@ export function statusLines(s) {
     ...(s.model ? [`Selected model: ${s.model}`] : []),
     ...(s.policyVersion
       ? [
-          `Jev policy: ${s.policyVersion} | Confidence: ${s.decisionConfidence ?? "unavailable"} | Lease: ${s.leaseSteps} generation(s)${s.leaseLimitedByUncertainty ? " (shortened for uncertainty)" : ""}`,
+          `Jev policy: ${s.policyVersion} | Confidence: ${s.decisionConfidence ?? "unavailable"} | ${lease}`,
         ]
       : []),
-    `This turn: ${s.generations} generations | Session: ${s.checkpoints} checkpoints, ${s.evaluations} Jev decisions`,
-    `Captured Astra tokens: ${s.inputTokens} input (${s.cachedInputTokens} cached), ${s.outputTokens} output`,
-    `Coverage: ${s.mode === "adaptive-checkpoint" ? "supported local tools; hosted/no-tool continuations excluded" : s.mode}`,
+    `This turn: ${captureUnavailable ? "generation count unavailable" : `${s.generations} generations`} | Session: ${s.checkpoints} checkpoints, ${s.evaluations} Jev decisions`,
+    captureUnavailable
+      ? "Native capture and token counts unavailable on resumed threads"
+      : `Captured Astra tokens: ${s.inputTokens} input (${s.cachedInputTokens} cached), ${s.outputTokens} output`,
+    `Coverage: ${["adaptive-checkpoint", "adaptive-resume"].includes(s.mode) ? "supported local tools; hosted/no-tool continuations excluded" : s.mode}`,
     ...(s.sandbox ? [`Native sandbox: ${s.sandbox}`] : []),
     ...(s.outsideThreadSeen
       ? [
@@ -158,7 +172,7 @@ export function modeLabel(s) {
       ? "INACTIVE"
       : s.policy && s.policy !== "auto"
         ? "FIXED"
-        : s.mode === "adaptive-checkpoint"
+        : ["adaptive-checkpoint", "adaptive-resume"].includes(s.mode)
           ? "ADAPTIVE"
           : s.mode === "turn-only-resume"
             ? "PER-TURN"

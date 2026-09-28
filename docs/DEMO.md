@@ -6,7 +6,7 @@ This is a demonstration script, not a measured savings claim. Use a disposable p
 2. Run `astra-jev --sandbox read-only` in the project. Show the automatically created project JSON, then the initial Jev effort choice on the first turn.
 3. Ask Astra to read a small fixture and assess a concurrency bug. Show a real captured effort notice if one occurs. Do not present a scripted label as a live decision or promise a specific effort.
 4. Open the printed `astra-jev-control --status tui-...` command in another terminal. Explain selected versus captured effort.
-5. Exit and run `astra-jev resume`. Show the native picker and selected effort; use status to inspect PER-TURN mode and native Codex permissions. Explain that mid-turn capture is unavailable on resumed threads.
+5. Exit and run `astra-jev resume`. Show the native picker and selected effort; use status to inspect ADAPTIVE mode and native Codex permissions. Run a task with changing tool evidence to show mid-turn effort updates. Explain that resume supports checkpoint adaptation but lacks live capture verification and generation leases.
 6. Use `$astra-jev show this project’s settings` to demonstrate the automatically installed configuration skill.
 7. Show a stock informational command such as `astra-jev --version`: Jev is explicitly INACTIVE. Explain `requireJev` for users who prefer an error over fallback.
 

@@ -101,10 +101,13 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
     reply({
       thread: { id: "thread-checkpoint", path: null, turns: [] },
       model: "gpt-6-astra",
-      sandbox: { type: p.sandbox === "read-only" ? "readOnly" : "workspaceWrite" },
+      sandbox: {
+        type: p.sandbox === "read-only" ? "readOnly" : "workspaceWrite",
+      },
     });
   } else if (m.method === "thread/settings/update") {
-    currentModel = p.collaborationMode?.settings?.model ?? p.model ?? currentModel;
+    currentModel =
+      p.collaborationMode?.settings?.model ?? p.model ?? currentModel;
     send({
       method: "thread/settings/updated",
       params: {
@@ -123,7 +126,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       if (!captureEvents && method.startsWith("rawResponse")) return;
       send({ method, params: { ...base, ...rest } });
     };
-    currentModel = p.collaborationMode?.settings?.model ?? p.model ?? currentModel;
+    currentModel =
+      p.collaborationMode?.settings?.model ?? p.model ?? currentModel;
     currentEffort = p.collaborationMode?.settings?.reasoning_effort ?? p.effort;
     reply({ turn: { id: turnId, status: "inProgress" } });
     event("turn/started", { turn: { id: turnId } });
@@ -161,7 +165,11 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       },
     });
     event("rawResponse/completed", { responseId: `${turnId}-r2` });
-    event("item/agentMessage/delta", { delta: "CHECKPOINT_OK" });
+    event("item/agentMessage/delta", {
+      delta: captureEvents
+        ? "CHECKPOINT_OK"
+        : `CONTINUATION_${currentEffort.toUpperCase()}`,
+    });
     event("turn/completed", { turn: { id: turnId, status: "completed" } });
   } else if (m.id !== undefined) reply({});
 });

@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { Controller } from "../src/controller.mjs";
 import { Context } from "../src/context.mjs";
 import { Session } from "../src/session.mjs";
+import { callBridge } from "../src/hook-bridge.mjs";
 import { modeLabel } from "../src/status.mjs";
 import { acknowledgePrivacy, privacyAcknowledged } from "../src/onboarding.mjs";
 import { projectConfig } from "../src/project-config.mjs";
@@ -27,6 +28,20 @@ function transportFixture({
   version = "0.157.1",
   resumeResult = {},
 } = {}) {
+  const hook = {
+    handlerType: "mcpTool",
+    server: "astra_jev_checkpoint",
+    tool: "checkpoint",
+    eventName: "postToolUse",
+    source: "sessionFlags",
+    sourcePath: "/<session-flags>/config.toml",
+    displayOrder: 0,
+    key: "/<session-flags>/config.toml:post_tool_use:0:0",
+    matcher: ".*",
+    currentHash: "fixture-hash",
+    timeoutSec: 20,
+    enabled: true,
+  };
   const t = new EventEmitter();
   t.config = [];
   t.calls = [];
@@ -47,13 +62,22 @@ function transportFixture({
           },
         ],
       };
-    if (method === "thread/resume")
+    if (method === "hooks/list") return { data: [{ hooks: [hook] }] };
+    if (method === "thread/resume") {
+      const args = t.config.find((x) =>
+        x.startsWith("mcp_servers.astra_jev_checkpoint.args="),
+      );
+      if (args)
+        await callBridge(JSON.parse(args.slice(args.indexOf("=") + 1))[1], {
+          op: "ready",
+        });
       return {
         model: "gpt-6-astra",
         sandbox: { type: sandbox },
         thread: { id: "owned", turns: [] },
         ...resumeResult,
       };
+    }
     if (method === "turn/start") return { turn: { id: "turn" } };
     return {};
   };
@@ -98,7 +122,10 @@ test("resumed sessions leave native permissions unchanged across Astra and Sol t
           cwd: "/project",
           model: "gpt-6-astra",
           approvalPolicy: "on-request",
-          config: { "sandbox_workspace_write.network_access": true },
+          config: {
+            "sandbox_workspace_write.network_access": true,
+            ...s.hookConfig,
+          },
         },
       );
       assert.equal(s.status().sandbox, sandbox.type);
