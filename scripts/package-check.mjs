@@ -25,6 +25,7 @@ const expected = new Set([
   "docs/ARCHITECTURE.md",
   "docs/COMPATIBILITY.md",
   "docs/RELEASING.md",
+  "docs/1.0-READINESS.md",
   "docs/DEMO.md",
   "examples/astra-jev.json",
   "skills/astra-jev/SKILL.md",

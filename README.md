@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>Adaptive reasoning for GPT-6 Astra. Powered by Jev. Built on stock Codex.</strong><br />
-  v0.0.8 · macOS beta preview · Stock Codex · Node 22.19+ · MIT
+  v1.0.0-rc.1 · macOS beta preview · Stock Codex · Node 22.19+ · MIT
 </p>
 
 <p align="center">
@@ -37,15 +37,14 @@ Install stock Codex separately and sign in with an account that has Astra access
 Install the latest tagged macOS beta:
 
 ```sh
-npm install --global --ignore-scripts 'https://github.com/brunocfalcao/astra-jev/releases/download/v0.0.8/astra-jev-0.0.8.tgz'
+npm install --global --ignore-scripts 'https://github.com/brunocfalcao/astra-jev/releases/download/v1.0.0-rc.1/astra-jev-1.0.0-rc.1.tgz'
 astra-jev-control setup
 astra-jev-control doctor
 ```
 
-The [release page](https://github.com/brunocfalcao/astra-jev/releases/tag/v0.0.8) includes the archive, SHA-256 checksum and tested scope. No Git installation is needed for the archive. The macOS CI badge links to the exact checks and results; a clean-Mac trial remains pending.
+The [release page](https://github.com/brunocfalcao/astra-jev/releases/tag/v1.0.0-rc.1) includes the archive, SHA-256 checksum and tested scope. No Git installation is needed for the archive. The macOS CI badge links to the exact checks and results; a clean-Mac trial remains pending.
 
-> [!WARNING]
-> **Long home-directory paths can prevent startup.** Managed TUI sessions and named hosts create a Unix socket under `~/.local/share/astra-jev/run/`. On macOS, the complete socket path must fit within **103 bytes**. Long usernames or deeply nested home directories can trigger `Session socket path is too long`; the affected launch stops before any model turn. This beta has no setting for a shorter socket directory yet. Moving your project does not shorten this home-based path. If affected, [report the error](https://github.com/brunocfalcao/astra-jev/issues/new/choose) with your home-path byte length, without sharing private paths or credentials.
+Long home paths use a short owner-only socket directory under `/tmp`; standard home paths retain their existing socket location.
 
 **Enter your own TypeSafe/Jev API key during `astra-jev-control setup`.** Each user supplies their own key; Codex sign-in does not provide it, and no shared key is bundled. Run setup in an interactive terminal after installation:
 
@@ -55,7 +54,7 @@ The [release page](https://github.com/brunocfalcao/astra-jev/releases/tag/v0.0.8
 
 If a key already exists in `TYPESAFE_API_KEY` or a [supported local credential file](PRIVACY.md#key-setup), setup reuses it and skips the key prompt. Keep keys out of `astra-jev.json`, chat and issues.
 
-**Starting a Jev session with `astra-jev` without an available key currently stops with a missing-key error; it does not open key setup automatically.** Run `astra-jev-control setup` first. Read [privacy](PRIVACY.md) before using confidential projects.
+Interactive adaptive launches guide you through hidden key setup when no key exists. Skipping key entry cancels launch. Noninteractive use requires setup beforehand. Read [privacy](PRIVACY.md) before using confidential projects.
 
 In a project folder:
 
@@ -92,10 +91,11 @@ Astra changed to HIGH effort (Jev)
 
 ```sh
 astra-jev-control --status tui-12345
-astra-jev-control status
+astra-jev-control status --list
+astra-jev-control status --thread THREAD_ID
 ```
 
-The first command queries that live host. The second reads recorded evidence and is not a liveness check.
+The first command queries that live host. Recorded status uses the current CODEX_THREAD_ID when available; otherwise select --thread or explicitly --latest. It is not a liveness check. Jev totals include discarded evaluations, failures, HTTP retries and cumulative evaluation time; unavailable usage is labelled incomplete.
 
 **`Jev: responding` describes the last successful evaluator request, not the health of the whole Astra turn.** Once Jev returns its choice, Codex handles the model request and tools. A long native `Working` interval alone does not identify a Jev failure; check decision timing and subsequent turn activity before assigning a cause.
 
@@ -164,7 +164,7 @@ One managed TUI owns one thread. Native follow-up input and skills, including `$
 
 ## Update, uninstall, contribute
 
-To update, install the archive from the latest reviewed release using the command above, then restart Astra-Jev. Source installations can use `git+https://github.com/brunocfalcao/astra-jev.git#v0.0.8` with Git installed; use a reviewed tag or commit SHA for repeatability. Project settings and credentials survive reinstall. Uninstall with:
+To update, install the archive from the latest reviewed release using the command above, then restart Astra-Jev. Source installations can use `git+https://github.com/brunocfalcao/astra-jev.git#v1.0.0-rc.1` with Git installed; use a reviewed tag or commit SHA for repeatability. Project settings and credentials survive reinstall. Uninstall with:
 
 ```sh
 npm uninstall --global astra-jev
@@ -184,3 +184,5 @@ MIT licensed. Inspired by [Astra-Ares](https://github.com/miuuyy/Astra-Ares); se
   <img src="assets/icon.svg" width="40" height="40" alt="Astra-Jev icon" /><br />
   <sub>Small controller. Visible decisions. Stock Codex.</sub>
 </p>
+
+See [1.0 acceptance gates](docs/1.0-READINESS.md) for the repeatable cost benchmark and independent Mac checklist.

@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.0-rc.1 — 2026-09-28
+
+### Features
+- [NEW FEATURE] Report Jev token usage, HTTP attempts, retries, failures and cumulative evaluation time, including discarded decisions.
+- [NEW FEATURE] Add a balanced coding-task benchmark with independent acceptance checks and optional account-specific cost estimates.
+
+### Fixes
+- [BUG FIX] Scope recorded status to the current thread or explicit selection instead of silently showing another session.
+- [BUG FIX] Use a short private socket location when home-directory paths exceed the native socket limit.
+
+### Improvements
+- [IMPROVED] Guide interactive first launches through hidden key setup while preserving explicit privacy consent.
+- [IMPROVED] Document 1.0 acceptance gates and measured synthetic benchmark results without claiming dollar savings.
+
+**Release candidate:** macOS only. Independent clean-Mac proof remains pending. Restart after installing; existing processes retain loaded code.
+
 ## 0.0.8 — 2026-09-28
 
 ### Fixes

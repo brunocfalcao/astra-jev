@@ -14,6 +14,16 @@ export class Status {
       generations: 0,
       checkpoints: 0,
       evaluations: 0,
+      jevRequests: 0,
+      jevAttemptsTotal: 0,
+      jevRetries: 0,
+      jevFailures: 0,
+      jevElapsedMs: 0,
+      jevInputTokens: 0,
+      jevOutputTokens: 0,
+      jevUnknownUsage: 0,
+      jevUnknownAttempts: 0,
+      jevAccounting: false,
       jev: "not checked",
       lastError: null,
       inputTokens: 0,
@@ -56,6 +66,27 @@ export class Status {
     if (event.type === "evaluation_requested") {
       v.phase = v.policy === "auto" ? "evaluating" : "running";
       v.contextStats = event.contextStats;
+    }
+    if (event.type === "jev_evaluation") {
+      v.jevAccounting = true;
+      v.jevRequests++;
+      v.jevFailures += event.success ? 0 : 1;
+      v.jevElapsedMs += event.elapsedMs ?? 0;
+      if (Number.isSafeInteger(event.attempts) && event.attempts >= 0) {
+        v.jevAttemptsTotal += event.attempts;
+        v.jevRetries += Math.max(0, event.attempts - 1);
+      } else v.jevUnknownAttempts++;
+      const usage = event.usage;
+      if (
+        [usage?.input_tokens, usage?.output_tokens].every(
+          (x) => Number.isSafeInteger(x) && x >= 0,
+        )
+      ) {
+        v.jevInputTokens += usage.input_tokens;
+        v.jevOutputTokens += usage.output_tokens;
+      } else if (event.attempts !== 0) v.jevUnknownUsage++;
+      // Failed/retried attempts may be billable without returned usage.
+      v.jevUnknownUsage += Math.max(0, (event.attempts ?? 1) - 1);
     }
     if (event.type === "decision_selected") {
       v.selectedEffort = event.effort;
@@ -152,6 +183,9 @@ export function statusLines(s) {
     captureUnavailable
       ? "Native capture and token counts unavailable on resumed threads"
       : `Captured Astra tokens: ${s.inputTokens} input (${s.cachedInputTokens} cached), ${s.outputTokens} output`,
+    s.jevAccounting
+      ? `Jev totals: ${s.jevInputTokens} input, ${s.jevOutputTokens} output tokens | ${s.jevRequests} evaluations, ${s.jevAttemptsTotal} HTTP attempts, ${s.jevRetries} retries, ${s.jevFailures} failures | ${s.jevElapsedMs} ms cumulative evaluation time${s.jevUnknownUsage || s.jevUnknownAttempts ? " | usage/attempt totals incomplete" : ""}`
+      : "Jev totals: not recorded (older session or no evaluator calls)",
     `Coverage: ${["adaptive-checkpoint", "adaptive-resume"].includes(s.mode) ? "supported local tools; hosted/no-tool continuations excluded" : s.mode}`,
     ...(s.sandbox ? [`Native sandbox: ${s.sandbox}`] : []),
     ...(s.outsideThreadSeen
@@ -180,10 +214,16 @@ export function modeLabel(s) {
   return `Jev mode: ${mode} | Permissions: ${s.sandbox ?? "not selected"} | Require Jev: ${s.requireJev ? "on" : "off"}`;
 }
 
-export async function latestStatus(
+export async function recordedSessions(
   directory = join(homedir(), ".local/share/astra-jev/logs"),
 ) {
-  const dir = await lstat(directory);
+  let dir;
+  try {
+    dir = await lstat(directory);
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
   if (!dir.isDirectory() || dir.uid !== process.getuid() || dir.mode & 0o077)
     throw new Error(
       "Decision log directory must be private and owned by this user",
@@ -192,6 +232,7 @@ export async function latestStatus(
     .filter((x) => /^\d{4}-.*\.jsonl$/.test(x))
     .sort()
     .reverse();
+  const sessions = [];
   for (const name of names) {
     const path = join(directory, name),
       info = await lstat(path);
@@ -222,19 +263,39 @@ export async function latestStatus(
         } catch {}
       }
       if (count)
-        return status.snapshot({
-          live: false,
-          logPath: path,
-          ...(offset
-            ? {
-                lastError:
-                  "Showing recent log records; session totals may be partial.",
-              }
-            : {}),
-        });
+        sessions.push(
+          status.snapshot({
+            live: false,
+            logPath: path,
+            ...(offset
+              ? {
+                  lastError:
+                    "Showing recent log records; session totals may be partial.",
+                }
+              : {}),
+          }),
+        );
     } finally {
       await file.close();
     }
   }
-  throw new Error("No recorded Astra + Jev session yet");
+  return sessions.filter((s) => s.threadId);
+}
+
+export async function latestStatus(
+  directory,
+  { threadId = process.env.CODEX_THREAD_ID, latest = false } = {},
+) {
+  const sessions = await recordedSessions(directory);
+  if (latest && sessions.length) return sessions[0];
+  if (threadId) {
+    const selected = sessions.find((s) => s.threadId === threadId);
+    if (selected) return selected;
+    throw new Error(
+      `No recorded Astra + Jev session for thread ${threadId}; use status --list`,
+    );
+  }
+  throw new Error(
+    "Select a session: status --list, then status --thread THREAD_ID (or explicitly status --latest)",
+  );
 }

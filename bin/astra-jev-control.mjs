@@ -10,13 +10,13 @@ import {
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { Jev, loadKey } from "../src/jev.mjs";
+import { Jev } from "../src/jev.mjs";
 import { Session } from "../src/session.mjs";
 import { AppServer } from "../src/app-server.mjs";
 import { redact } from "../src/context.mjs";
 import { Terminal, terminalSafe, eventMessage } from "../src/terminal.mjs";
-import { latestStatus, statusLines } from "../src/status.mjs";
-import { ensurePrivacy, setup } from "../src/onboarding.mjs";
+import { latestStatus, recordedSessions, statusLines } from "../src/status.mjs";
+import { ensureKey, setup } from "../src/onboarding.mjs";
 import { ensureSkill } from "../src/skill.mjs";
 import { projectConfig, setProjectSetting } from "../src/project-config.mjs";
 import {
@@ -31,10 +31,51 @@ const args = process.argv.slice(2),
 let session, terminal, key, host, logFd, nativeTui;
 function usage() {
   console.log(
-    "Usage: astra-jev-control [--cwd DIR] [--resume THREAD_ID] [--read-only] [--fixed-effort LEVEL] [--image PATH] [PROMPT]\n       astra-jev-control --tui [--cwd DIR] [--read-only] [PROMPT]\n       astra-jev-control --serve NAME [--cwd DIR] [--read-only]\n       astra-jev-control --attach NAME [--image PATH] [PROMPT]\n       astra-jev-control --status NAME\n       astra-jev-control --stop NAME\n       astra-jev-control status\n       astra-jev-control doctor\n       astra-jev-control setup\n       astra-jev-control install-skill\n       astra-jev-control config [--cwd DIR]\n       astra-jev-control config set KEY VALUE [--cwd DIR]\n\nWithout PROMPT, opens a terminal conversation. /help lists controls. Ctrl-C interrupts.\n--tui opens the stock Codex interface with Jev control; startup prints its live-status command.\n--serve keeps the native session alive in the foreground until stopped.\nstatus reads recent local evidence; --status queries a live named host. Neither calls Jev.\nExperimental: synchronous checkpoints cover supported local tools. Restarted threads use Jev per turn.",
+    "Usage: astra-jev-control [--cwd DIR] [--resume THREAD_ID] [--read-only] [--fixed-effort LEVEL] [--image PATH] [PROMPT]\n       astra-jev-control --tui [--cwd DIR] [--read-only] [PROMPT]\n       astra-jev-control --serve NAME [--cwd DIR] [--read-only]\n       astra-jev-control --attach NAME [--image PATH] [PROMPT]\n       astra-jev-control --status NAME\n       astra-jev-control --stop NAME\n       astra-jev-control status [--list | --thread THREAD_ID | --latest]\n       astra-jev-control doctor\n       astra-jev-control setup\n       astra-jev-control install-skill\n       astra-jev-control config [--cwd DIR]\n       astra-jev-control config set KEY VALUE [--cwd DIR]\n\nWithout PROMPT, opens a terminal conversation. /help lists controls. Ctrl-C interrupts.\n--tui opens the stock Codex interface with Jev control; startup prints its live-status command.\n--serve keeps the native session alive in the foreground until stopped.\nstatus reads recent local evidence; --status queries a live named host. Neither calls Jev.\nExperimental: synchronous checkpoints cover supported local tools. Restarted threads use Jev per turn.",
   );
 }
 try {
+  if (args[0] === "status") {
+    const tail = args.slice(1);
+    if (tail.length === 1 && tail[0] === "--list") {
+      const sessions = await recordedSessions();
+      console.log(
+        sessions.length
+          ? sessions
+              .map((s) =>
+                terminalSafe(
+                  `${s.threadId} | ${s.phase} | ${s.updatedAt} | ${s.logPath}`,
+                ),
+              )
+              .join("\n")
+          : "No recorded Astra + Jev sessions",
+      );
+    } else {
+      if (!(
+        tail.length === 0 ||
+        (tail.length === 1 && tail[0] === "--latest") ||
+        (tail.length === 2 &&
+          tail[0] === "--thread" &&
+          tail[1] &&
+          !tail[1].startsWith("-"))
+      ))
+        throw new Error(
+          "Usage: status [--list | --thread THREAD_ID | --latest]",
+        );
+      console.log(
+        statusLines(
+          await latestStatus(undefined, {
+            threadId:
+              tail[0] === "--thread" ? tail[1] : process.env.CODEX_THREAD_ID,
+            latest: tail[0] === "--latest",
+          }),
+        )
+          .map(terminalSafe)
+          .join("\n"),
+      );
+    }
+    process.exit(0);
+  }
   if (args.length === 1 && args[0] === "install-skill") {
     const result = await ensureSkill();
     console.log(JSON.stringify(result, null, 2));
@@ -159,8 +200,11 @@ try {
     !options.status &&
     !recordedStatus
   ) {
-    await ensurePrivacy();
-    key = loadKey();
+    key = await ensureKey();
+    if (!key)
+      throw new Error(
+        "No key stored; adaptive launch cancelled. Run astra-jev-control setup.",
+      );
   }
   const safe = (s) => terminalSafe(redact(s, key ? [key] : []));
   if (recordedStatus)

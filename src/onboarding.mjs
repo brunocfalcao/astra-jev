@@ -105,15 +105,14 @@ export async function ensurePrivacy() {
     );
   await acknowledgePrivacy();
 }
-export async function setup() {
-  await ensureSkill();
+export async function ensureKey({
+  interactive = !!process.stdin.isTTY && !!process.stdout.isTTY,
+} = {}) {
   await ensurePrivacy();
   try {
-    loadKey();
-    console.log(
-      "A Jev key is available. Its value was not displayed or changed.",
-    );
-  } catch {
+    return loadKey();
+  } catch (error) {
+    if (error.code !== "JEV_KEY_MISSING" || !interactive) throw error;
     const key = (
       await ask("TypeSafe API key (hidden; Enter skips): ", { secret: true })
     ).trim();
@@ -129,11 +128,19 @@ export async function setup() {
         await file.close();
       }
       console.log("Key stored in the private Astra-Jev credential file.");
-    } else
-      console.log(
-        "No key stored. Set TYPESAFE_API_KEY before an adaptive session.",
-      );
+      return key;
+    }
+    return null;
   }
+}
+export async function setup() {
+  await ensureSkill();
+  const key = await ensureKey();
+  console.log(
+    key
+      ? "A Jev key is available. Its value was not displayed."
+      : "No key stored. Run setup before an adaptive session.",
+  );
   console.log(
     "Next: astra-jev-control doctor, then astra-jev in a project folder.",
   );

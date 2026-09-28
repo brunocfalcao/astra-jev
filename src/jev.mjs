@@ -25,9 +25,11 @@ export function loadKey({
     );
     if (match) return match[1] ?? match[2] ?? match[3];
   }
-  throw new Error(
-    "TYPESAFE_API_KEY is missing from environment and local credential files",
+  const error = new Error(
+    "TYPESAFE_API_KEY is missing; run astra-jev-control setup",
   );
+  error.code = "JEV_KEY_MISSING";
+  throw error;
 }
 const descriptions = {
   low: "Routine read-only orientation, locating files, polling a running process, executing an already-validated step, or summarizing settled findings. Little unresolved inference. A previously difficult task can now be in this routine phase.",
@@ -148,6 +150,15 @@ export class Jev {
     this.retryAt = 0;
   }
   async decide(state, { signal } = {}) {
+    const trace = { attempts: 0 };
+    try {
+      return await this.requestDecision(state, { signal, trace });
+    } catch (error) {
+      error.attempts = trace.attempts;
+      throw error;
+    }
+  }
+  async requestDecision(state, { signal, trace }) {
     if (this.now() < this.retryAt) throw new Error("Jev retry deferred");
     const body = JSON.stringify(decisionRequest(state));
     const requestBytes = Buffer.byteLength(body);
@@ -164,6 +175,7 @@ export class Jev {
       checkCancelled();
       let response;
       try {
+        trace.attempts = attempt;
         response = await this.fetchImpl(
           "https://api.typesafe.ai/v1/systemone",
           {

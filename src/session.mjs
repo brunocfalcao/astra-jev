@@ -94,11 +94,28 @@ export class Session {
     if (!this.fixedEffort && !this.jev)
       throw new Error("Jev evaluator missing");
     const evaluator = {
-      decide: (state, options) => {
+      decide: async (state, options) => {
         const effort = this.manualEffort ?? this.fixedEffort;
-        return effort
-          ? { effort, leaseSteps: 10, source: "manual" }
-          : this.jev.decide(state, options);
+        if (effort) return { effort, leaseSteps: 10, source: "manual" };
+        const started = performance.now();
+        let decision, failure;
+        try {
+          decision = await this.jev.decide(state, options);
+          return decision;
+        } catch (error) {
+          failure = error;
+          throw error;
+        } finally {
+          this.record({
+            time: new Date().toISOString(),
+            type: "jev_evaluation",
+            threadId: this.threadId,
+            success: !!decision,
+            attempts: decision?.attempts ?? failure?.attempts ?? null,
+            elapsedMs: Math.round(performance.now() - started),
+            usage: decision?.usage ?? null,
+          });
+        }
       },
     };
     this.controller = new Controller({

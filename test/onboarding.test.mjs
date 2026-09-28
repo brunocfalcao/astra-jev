@@ -8,7 +8,7 @@ import { join } from "node:path";
 // Exercise real readline terminal rendering, without a service call or real key.
 const driver = `
 import { PassThrough } from "node:stream";
-import { ensurePrivacy, setup } from ${JSON.stringify(new URL("../src/onboarding.mjs", import.meta.url).href)};
+import { ensurePrivacy, setup, ensureKey } from ${JSON.stringify(new URL("../src/onboarding.mjs", import.meta.url).href)};
 const report = process.stdout.write.bind(process.stdout);
 const input = new PassThrough(), output = new PassThrough();
 input.isTTY = output.isTTY = true;
@@ -33,7 +33,7 @@ output.on("data", chunk => {
 });
 let error = null;
 try {
-  await (process.env.FIXTURE_SETUP === "1" ? setup() : ensurePrivacy());
+  await (process.env.FIXTURE_SETUP === "2" ? ensureKey() : process.env.FIXTURE_SETUP === "1" ? setup() : ensurePrivacy());
 } catch (e) { error = e.message; }
 input.destroy();
 report(JSON.stringify({ consentScreen, text, error }));
@@ -45,7 +45,7 @@ async function runFixture(answer, setup = false) {
   delete env.ASTRA_JEV_PRIVACY_ACK;
   delete env.TYPESAFE_API_KEY;
   env.FIXTURE_ANSWER = answer;
-  env.FIXTURE_SETUP = setup ? "1" : "0";
+  env.FIXTURE_SETUP = setup === "launch" ? "2" : setup ? "1" : "0";
   const result = spawnSync(
     process.execPath,
     ["--input-type=module", "-e", driver],
@@ -113,6 +113,26 @@ test("blank, refusal and Ctrl-C never record consent; hidden key input stays hid
       "TYPESAFE_API_KEY=fixture-secret-only\n",
     );
     assert.equal((await stat(path)).mode & 0o777, 0o600);
+  } finally {
+    await rm(result.home, { recursive: true, force: true });
+  }
+});
+
+test("adaptive first launch obtains a hidden key after consent", async () => {
+  const result = await runFixture("YES\n", "launch");
+  try {
+    assert.equal(result.error, null);
+    assert.equal(
+      (result.text + result.stderr).includes("fixture-secret-only"),
+      false,
+    );
+    assert.equal(
+      await readFile(
+        join(result.home, ".config/astra-jev/credentials"),
+        "utf8",
+      ),
+      "TYPESAFE_API_KEY=fixture-secret-only\n",
+    );
   } finally {
     await rm(result.home, { recursive: true, force: true });
   }

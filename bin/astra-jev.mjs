@@ -6,13 +6,13 @@ import { randomUUID } from "node:crypto";
 import { writeSync } from "node:fs";
 import { projectConfig } from "../src/project-config.mjs";
 import { planLaunch, runCodex, exitCode } from "../src/codex-launch.mjs";
-import { Jev, loadKey } from "../src/jev.mjs";
+import { Jev } from "../src/jev.mjs";
 import { Session } from "../src/session.mjs";
 import { NativeTui } from "../src/native-tui.mjs";
 import { SessionHost, sessionSocket } from "../src/persistent.mjs";
 import { redact } from "../src/context.mjs";
 import { terminalSafe } from "../src/terminal.mjs";
-import { ensurePrivacy } from "../src/onboarding.mjs";
+import { ensureKey } from "../src/onboarding.mjs";
 import { ensureSkill } from "../src/skill.mjs";
 
 const args = process.argv.slice(2);
@@ -37,8 +37,11 @@ try {
       );
     await ensureSkill();
     if (!config.fixedEffort) {
-      await ensurePrivacy();
-      key = loadKey();
+      key = await ensureKey();
+      if (!key)
+        throw new Error(
+          "No key stored; adaptive launch cancelled. Run astra-jev-control setup.",
+        );
     }
     const directory = join(homedir(), ".local/share/astra-jev/logs");
     await mkdir(directory, { recursive: true, mode: 0o700 });

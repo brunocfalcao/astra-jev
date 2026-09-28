@@ -5,22 +5,25 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 
-export async function sessionSocket(
-  name,
-  directory = join(homedir(), ".local/share/astra-jev/run"),
-) {
+export async function sessionSocket(name, directory) {
   if (!/^[a-zA-Z0-9_-]{1,40}$/.test(name))
     throw new Error(
       "Session name must contain 1–40 letters, digits, underscores or hyphens",
     );
+  const standard = join(homedir(), ".local/share/astra-jev/run");
+  const filename =
+    createHash("sha256").update(name).digest("hex").slice(0, 20) + ".sock";
+  // Keep existing short paths compatible with running hosts. A deterministic,
+  // owner-only short directory lets observers find long-home hosts too.
+  directory ??=
+    Buffer.byteLength(join(standard, filename)) <= 103
+      ? standard
+      : `/tmp/astra-jev-${process.getuid()}-${createHash("sha256").update(homedir()).digest("hex").slice(0, 12)}`;
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const info = await lstat(directory);
   if (!info.isDirectory() || info.uid !== process.getuid() || info.mode & 0o077)
     throw new Error("Session directory must be private and owned by this user");
-  const path = join(
-    directory,
-    createHash("sha256").update(name).digest("hex").slice(0, 20) + ".sock",
-  );
+  const path = join(directory, filename);
   if (Buffer.byteLength(path) > 103)
     throw new Error("Session socket path is too long");
   return path;
