@@ -9,7 +9,7 @@ import { Session } from "../src/session.mjs";
 import { NativeTui } from "../src/native-tui.mjs";
 import { modeLabel, statusLines } from "../src/status.mjs";
 
-function fixture(options = {}) {
+function fixture(options = {}, tuiOptions = {}) {
   const requests = [],
     records = [],
     states = [],
@@ -43,7 +43,7 @@ function fixture(options = {}) {
     },
     ...options,
   });
-  const gateway = new NativeTui({ session });
+  const gateway = new NativeTui({ session, ...tuiOptions });
   let id = 0,
     client;
   const pending = new Map();
@@ -370,5 +370,91 @@ test("a rejected inactive turn releases ownership and can return to Astra", asyn
     assert.equal(f.session.mode, "adaptive-checkpoint");
   } finally {
     await f.close();
+  }
+});
+
+test("inactive notices appear only when leaving Astra, with silent non-Astra turns and switches", async () => {
+  const f = fixture();
+  const notices = () =>
+    f.replies
+      .filter((message) => message.method === "hook/completed")
+      .flatMap((message) =>
+        message.params.run.entries.map((entry) => entry.text),
+      );
+  const select = (model) =>
+    f.rpc("thread/settings/update", {
+      threadId: f.session.threadId,
+      model,
+    });
+  const inactive =
+    "Jev inactive for the selected model; select Astra to reactivate";
+  try {
+    await f.open();
+    assert.deepEqual(notices(), []);
+    await select("gpt-6-sol");
+    assert.deepEqual(notices(), [inactive]);
+    await f.turn({ effort: "medium" });
+    await f.turn({ effort: "medium" });
+    assert.deepEqual(notices(), [inactive]);
+    await select("gpt-6-luna");
+    await f.turn({ effort: "low" });
+    assert.deepEqual(notices(), [inactive]);
+    assert.equal(f.session.status().mode, "inactive");
+    assert.equal(f.states.length, 0);
+    await select("gpt-6-astra");
+    assert.deepEqual(notices(), [inactive, "Jev active for Astra again"]);
+    await select("gpt-6-sol");
+    await f.turn({ effort: "medium" });
+    assert.deepEqual(notices(), [
+      inactive,
+      "Jev active for Astra again",
+      inactive,
+    ]);
+    assert.equal(f.states.length, 0);
+  } finally {
+    await f.close();
+  }
+});
+
+test("quiet TUI keeps fresh and resumed Jev decisions, status and model-switch notices", async () => {
+  for (const resume of [undefined, "fixture-resumed"]) {
+    const f = fixture({}, { verbose: false });
+    const notices = () =>
+      f.replies
+        .filter((message) => message.method === "hook/completed")
+        .flatMap((message) =>
+          message.params.run.entries.map((entry) => entry.text),
+        );
+    try {
+      await f.open({ resume });
+      assert.deepEqual(notices(), []);
+      assert.equal(f.states.length, 0);
+      await f.turn({ model: "gpt-6-astra" });
+      await f.turn({ model: "gpt-6-astra" });
+      assert.deepEqual(notices(), []);
+      const evaluations = resume ? 2 : 4;
+      assert.equal(f.states.length, evaluations);
+      assert.equal(
+        f.records.filter((event) => event.type === "decision_selected").length,
+        evaluations,
+      );
+      assert.equal(f.session.status().jev, "responding");
+      assert.equal(f.session.status().selectedEffort, "low");
+      assert.equal(f.session.status().capturedEffort, resume ? null : "low");
+      await f.turn({ model: "gpt-6-sol", effort: "medium" });
+      await f.turn({ model: "gpt-6-sol", effort: "medium" });
+      assert.equal(f.states.length, evaluations);
+      assert.deepEqual(notices(), [
+        "Jev inactive for the selected model; select Astra to reactivate",
+      ]);
+      await f.turn({ model: "gpt-6-astra" });
+      assert.deepEqual(notices(), [
+        "Jev inactive for the selected model; select Astra to reactivate",
+        "Jev active for Astra again",
+      ]);
+      assert.equal(f.states.length, evaluations + (resume ? 1 : 2));
+    } finally {
+      await f.close();
+    }
   }
 });

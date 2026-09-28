@@ -5,6 +5,7 @@ import { join } from "node:path";
 export const defaults = Object.freeze({
   version: 1,
   enabled: true,
+  verbose: true,
   fixedEffort: null,
   noAltScreen: true,
   requireJev: false,
@@ -49,6 +50,7 @@ export async function projectConfig(cwd) {
   if (
     config.version !== 1 ||
     typeof config.enabled !== "boolean" ||
+    typeof config.verbose !== "boolean" ||
     typeof config.noAltScreen !== "boolean" ||
     typeof config.requireJev !== "boolean" ||
     !["read-only", "codex"].includes(config.resumePermissions) ||

@@ -6,9 +6,10 @@ import { modeLabel } from "./status.mjs";
 // completed-hook system-message renderer gives these a durable, neutral row.
 // These summaries never enter App Server, hook execution, or model context.
 export class EffortNotices {
-  constructor({ session, emit }) {
-    Object.assign(this, { session, emit });
+  constructor({ session, emit, verbose = true }) {
+    Object.assign(this, { session, emit, verbose });
     this.captured = session.controller?.capturedEffort ?? null;
+    this.inactive = session.mode === "inactive";
   }
   handle(event) {
     if (event.threadId !== this.session.threadId) return;
@@ -16,6 +17,9 @@ export class EffortNotices {
       this.pending = null;
       this.evaluation = null;
       this.captured = null;
+      const alreadyInactive = this.inactive;
+      this.inactive = event.mode === "inactive";
+      if (this.inactive && alreadyInactive) return;
       this.show(
         event,
         "mode",
@@ -29,7 +33,7 @@ export class EffortNotices {
     if (event.type === "turn_preparing") {
       this.pending = null;
       this.evaluation = null;
-      if (this.session.mode)
+      if (this.session.mode && this.session.mode !== "inactive")
         this.show(event, "mode", modeLabel(this.session.status()));
     }
     if (event.type === "evaluation_requested") this.evaluation = event;
@@ -106,6 +110,14 @@ export class EffortNotices {
     );
   }
   show(decision, outcome, message) {
+    // Quiet mode affects presentation only. Keep model transitions and failures
+    // visible; controller decisions and captured effort still reach status/logs.
+    if (
+      !this.verbose &&
+      (decision.type === "turn_preparing" ||
+        ["set", "changed", "kept", "selected"].includes(outcome))
+    )
+      return;
     const now = Date.now();
     const started = Date.parse(decision.startedAt ?? decision.time);
     this.emit(

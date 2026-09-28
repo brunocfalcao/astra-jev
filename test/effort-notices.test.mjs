@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { EffortNotices } from "../src/effort-notices.mjs";
 
-function setup({ captureEvents = true } = {}) {
+function setup({ captureEvents = true, verbose = true } = {}) {
   const messages = [];
   const session = {
     threadId: "owned",
@@ -10,6 +10,7 @@ function setup({ captureEvents = true } = {}) {
   };
   const notices = new EffortNotices({
     session,
+    verbose,
     emit: (message) => messages.push(message),
   });
   const event = (type, fields = {}) =>
@@ -122,4 +123,26 @@ test("foreign, unsupported and manual choices never become Jev notices", () => {
   select("low", 1, { evaluatedModel: undefined, source: "manual" });
   capture("low");
   assert.deepEqual(text(), []);
+});
+
+test("quiet notices suppress routine decisions while retaining failure evidence", () => {
+  const quiet = setup({ verbose: false });
+  quiet.select("low");
+  quiet.capture("low");
+  quiet.select("medium", 2);
+  quiet.capture("medium", 2);
+  quiet.select("medium", 3);
+  quiet.event("turn_completed");
+  assert.deepEqual(quiet.text(), []);
+  quiet.select("high", 4);
+  quiet.event("update_unconfirmed");
+  quiet.event("evaluation_failed");
+  assert.deepEqual(quiet.text(), [
+    "Jev selected HIGH effort; change unconfirmed",
+    "Jev unavailable; Astra retains MEDIUM effort",
+  ]);
+  const resumed = setup({ captureEvents: false, verbose: false });
+  resumed.select("high");
+  resumed.event("turn_completed");
+  assert.deepEqual(resumed.text(), []);
 });

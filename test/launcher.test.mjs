@@ -48,6 +48,26 @@ test("project config creates defaults once and preserves existing and invalid fi
   }
 });
 
+test("project verbosity defaults on, accepts quiet mode and rejects non-booleans", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "astra-verbosity-"));
+  const path = join(cwd, "astra-jev.json");
+  try {
+    assert.equal((await projectConfig(cwd)).verbose, true);
+    for (const verbose of [false, true]) {
+      const contents = JSON.stringify({ verbose });
+      await writeFile(path, contents);
+      assert.equal((await projectConfig(cwd)).verbose, verbose);
+      assert.equal(await readFile(path, "utf8"), contents);
+    }
+    for (const verbose of ["false", null, 0, [], {}]) {
+      await writeFile(path, JSON.stringify({ verbose }));
+      await assert.rejects(projectConfig(cwd), /Invalid astra-jev.json/);
+    }
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test("launch routing preserves prompts, resume syntax and Codex option boundaries", () => {
   for (const args of [
     [],

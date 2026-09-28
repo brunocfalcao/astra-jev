@@ -14,6 +14,7 @@ export class NativeTui {
   constructor({
     session,
     record = () => {},
+    verbose = true,
     onOpen = () => {},
     createFreshSession,
     onSessionChanged = () => {},
@@ -21,6 +22,7 @@ export class NativeTui {
     Object.assign(this, {
       session,
       record,
+      verbose,
       onOpen,
       createFreshSession,
       onSessionChanged,
@@ -104,6 +106,7 @@ export class NativeTui {
     this.session.transport.on("notification", this.forward);
     this.effortNotices = new EffortNotices({
       session: this.session,
+      verbose: this.verbose,
       emit: (message, detail) => {
         if (this.client?.readyState !== WebSocket.OPEN) return;
         this.send(message);

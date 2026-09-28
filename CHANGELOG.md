@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.0.3 — 2026-09-28
+
+### Features
+- [NEW FEATURE] Add `verbose: false` in project settings to hide routine effort notices and per-turn banners while Jev, decision logs and live status keep working.
+
+### Fixes
+- [BUG FIX] Announce Jev inactivity once when leaving Astra, stay silent across subsequent non-Astra turns and model changes, and reset the notice when returning to Astra.
+
+### Improvements
+- [IMPROVED] Keep failure and model-switch notices visible in quiet mode; preserve existing verbosity by default.
+- [IMPROVED] Cover quiet fresh and resumed sessions, decision evidence, invalid settings and repeated model switches with regression tests.
+
+This remains a macOS beta for stock Codex 0.157.1. Restart Astra-Jev after changing project settings. A separate clean-Mac trial remains pending.
+
 ## 0.0.2 — 2026-09-28
 
 ### Fixes

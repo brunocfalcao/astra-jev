@@ -1,6 +1,7 @@
 {
   "version": 1,
   "enabled": true,
+  "verbose": true,
   "fixedEffort": null,
   "noAltScreen": true,
   "requireJev": false,

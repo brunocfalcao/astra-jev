@@ -86,6 +86,7 @@ try {
     gateway = new NativeTui({
       session,
       record,
+      verbose: config.verbose,
       createFreshSession: createSession,
       onSessionChanged: (fresh) => {
         session = fresh;
