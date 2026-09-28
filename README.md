@@ -45,7 +45,15 @@ The [release page](https://github.com/brunocfalcao/astra-jev/releases/tag/v0.0.6
 > [!WARNING]
 > **Long home-directory paths can prevent startup.** Managed TUI sessions and named hosts create a Unix socket under `~/.local/share/astra-jev/run/`. On macOS, the complete socket path must fit within **103 bytes**. Long usernames or deeply nested home directories can trigger `Session socket path is too long`; the affected launch stops before any model turn. This beta has no setting for a shorter socket directory yet. Moving your project does not shorten this home-based path. If affected, [report the error](https://github.com/brunocfalcao/astra-jev/issues/new/choose) with your home-path byte length, without sharing private paths or credentials.
 
-`setup` explains the data flow and asks for acknowledgment: **type `YES`, then press Enter** to allow it. Enter alone cancels setup; no evaluator request is sent. It can securely store a key using hidden terminal input and never displays the key. An existing `TYPESAFE_API_KEY` environment variable also works. Read [privacy](PRIVACY.md) before using confidential projects.
+**Enter your own TypeSafe/Jev API key during `astra-jev-control setup`.** Each user supplies their own key; Codex sign-in does not provide it, and no shared key is bundled. Run setup in an interactive terminal after installation:
+
+1. If asked to allow the data flow, **type `YES`, then press Enter**. Enter alone cancels consent; no evaluator request is sent.
+2. At `TypeSafe API key (hidden; Enter skips):`, paste your key and press Enter. Input stays hidden. Enter alone skips key storage; adaptive sessions still require an available key.
+3. The entered key is saved in `~/.config/astra-jev/credentials` with owner-only permissions. Run `astra-jev-control doctor` to verify Astra and Jev connectivity.
+
+If a key already exists in `TYPESAFE_API_KEY` or a [supported local credential file](PRIVACY.md#key-setup), setup reuses it and skips the key prompt. Keep keys out of `astra-jev.json`, chat and issues.
+
+**Starting a Jev session with `astra-jev` without an available key currently stops with a missing-key error; it does not open key setup automatically.** Run `astra-jev-control setup` first. Read [privacy](PRIVACY.md) before using confidential projects.
 
 In a project folder:
 
