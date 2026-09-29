@@ -13,6 +13,7 @@ export class EffortNotices {
   }
   handle(event) {
     if (event.threadId !== this.session.threadId) return;
+    if (event.type === "pace_notice") this.show(event, "pace", event.message);
     if (event.type === "model_changed") {
       this.pending = null;
       this.evaluation = null;

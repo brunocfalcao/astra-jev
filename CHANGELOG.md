@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.1-rc.3 — 2026-09-29
+
+### Features
+- Automatically use conservative adjustment when subscription usage exceeds elapsed quota time; restore the configured adjustment on or under pace. Fixed effort stays unchanged.
+- Show one above-pace notice per fresh or resumed session, at launch or first activation; subsequent crossings remain silent.
+
+### Improvements
+- Clarify Jev decision ownership so routine worker waits and settled confirmations use lower effort while active reasoning retains appropriate effort.
+- Report allowance pace and effective adjustment in status.
+
+**Release candidate:** macOS only. Independent clean-Mac proof remains pending. Restart after installing; existing sessions retain loaded code.
+
 ## 1.0.1-rc.2 — 2026-09-29
 
 ### Features

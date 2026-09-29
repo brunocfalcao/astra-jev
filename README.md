@@ -11,7 +11,7 @@ macOS beta · Node 22.19+ · Your Codex account + your TypeSafe API key
 Install stock Codex and sign in with an account that has GPT-6 Astra access. Then install the latest published archive:
 
 ```sh
-npm install --global --ignore-scripts 'https://github.com/brunocfalcao/astra-jev/releases/download/v1.0.1-rc.2/astra-jev-1.0.1-rc.2.tgz'
+npm install --global --ignore-scripts 'https://github.com/brunocfalcao/astra-jev/releases/download/v1.0.1-rc.3/astra-jev-1.0.1-rc.3.tgz'
 astra-jev-control setup
 astra-jev-control doctor
 ```
@@ -79,6 +79,10 @@ Add `--cwd PATH` to configuration commands to target another project. Legacy `re
 
 Set your preference with `astra-jev-control config set effortAdjustment conservative`, then restart. Decision logs retain both Jev’s original choice (`jevEffort`) and the applied effort.
 
+Adaptive sessions automatically use conservative adjustment when Codex subscription usage is above pace: remaining allowance percentage is less than the remaining percentage of its quota period. For example, 55% used halfway through a period is above pace; 50% is on pace. Either valid primary or secondary window in the shared `codex` bucket can trigger it. On or under pace, your configured adjustment applies again. Fixed/manual effort stays unchanged, and project settings are never rewritten.
+
+Allowance is read before the first adaptive decision, refreshed at most once per minute when evaluating, and updated from Codex notifications. Changes apply at the next Jev decision. Missing, failed or expired readings preserve your configured adjustment; unrelated model buckets are ignored. Status reports the pace and effective adjustment at the last decision. Restart existing sessions to load this behavior.
+
 ### Status
 
 ```sh
@@ -120,3 +124,5 @@ Checks use synthetic fixtures without service credentials. Native integration an
 [Contributing](CONTRIBUTING.md) · [Release procedure](docs/RELEASING.md) · [Walkthrough](docs/DEMO.md) · [Security reporting](SECURITY.md) · [Changelog](CHANGELOG.md)
 
 MIT licensed. Inspired by [Astra-Ares](https://github.com/miuuyy/Astra-Ares); see [third-party notices](THIRD_PARTY_NOTICES.md). Not affiliated with OpenAI or TypeSafe.
+
+When above-pace usage first activates conservative adjustment, Astra-Jev displays one notice per session, including fresh and resumed launches. If usage starts on pace, the notice appears at the first later above-pace decision. Recovery and subsequent crossings remain silent. This notice is visible even with routine verbosity disabled.

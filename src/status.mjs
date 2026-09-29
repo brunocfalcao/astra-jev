@@ -33,6 +33,11 @@ export class Status {
   }
   update(event) {
     const v = this.value;
+    if (event.type === "usage_pace") {
+      v.usagePace = event.pace;
+      v.configuredAdjustment = event.configuredAdjustment;
+      v.effectiveAdjustment = event.effectiveAdjustment;
+    }
     if (event.threadId) v.threadId = event.threadId;
     if (event.time) v.updatedAt = event.time;
     if (event.type === "session_opened")
@@ -176,6 +181,7 @@ export function statusLines(s) {
     `Astra captured: ${effort} | Selected: ${s.selectedEffort ?? "none"} | Policy: ${s.policy}`,
     `Jev: ${s.mode === "inactive" ? "inactive" : s.policy !== "auto" ? "paused by manual effort" : s.jev}${s.jevLatencyMs !== undefined ? ` | Last decision: ${s.jevLatencyMs} ms` : ""}`,
     ...(s.model ? [`Selected model: ${s.model}`] : []),
+    ...(s.usagePace ? [`Allowance pace at last decision: ${s.usagePace.state} | Adjustment: ${s.effectiveAdjustment} (configured: ${s.configuredAdjustment})`] : []),
     ...(s.policyVersion
       ? [
           `Jev policy: ${s.policyVersion} | Confidence: ${s.decisionConfidence ?? "unavailable"} | ${lease}`,

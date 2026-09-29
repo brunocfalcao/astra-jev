@@ -3,6 +3,7 @@ import { Controller } from "./controller.mjs";
 import { Context } from "./context.mjs";
 import { HookBridge } from "./hook-bridge.mjs";
 import { Status } from "./status.mjs";
+import { UsagePace } from "./usage-pace.mjs";
 import { stat, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 
@@ -68,6 +69,7 @@ export class Session {
       effortAdjustment,
       threadOptions,
       requireJev,
+      nativeUi,
     });
     this.statusTracker = new Status();
     this.record = (event) => {
@@ -77,6 +79,9 @@ export class Session {
     };
     this.transport =
       transport ?? new AppServer({ cwd, config, secrets, nativeUi });
+    this.usagePace = new UsagePace({
+      request: (...args) => this.transport.request(...args),
+    });
     this.text = "";
     this.transport.on("notification", (m) => {
       void this.notification(m).catch((e) => this.waiter?.reject(e));
@@ -128,13 +133,27 @@ export class Session {
       decide: async (state, options) => {
         const effort = this.manualEffort ?? this.fixedEffort;
         if (effort) return { effort, leaseSteps: 10, source: "manual" };
+        await this.usagePace.read();
         const started = performance.now();
         let decision, failure;
         try {
           decision = await this.jev.decide(state, options);
+          const pace = this.usagePace.snapshot();
+          const notice = this.paceNotice(pace);
+          if (notice) {
+            this.record({ time: new Date().toISOString(), type: "pace_notice", threadId: this.threadId, message: notice });
+            if (!this.nativeUi) this.onNotice(notice);
+          }
+          const adjustment = pace.state === "above" ? "conservative" : this.effortAdjustment;
+          this.record({
+            time: new Date().toISOString(), type: "usage_pace",
+            threadId: this.threadId, pace,
+            configuredAdjustment: this.effortAdjustment,
+            effectiveAdjustment: adjustment,
+          });
           return applyEffortAdjustment(
             decision,
-            this.effortAdjustment,
+            adjustment,
             efforts,
           );
         } catch (error) {
@@ -221,6 +240,10 @@ export class Session {
       sandbox: result.sandbox?.type ?? "unknown",
       requireJev: this.requireJev,
     });
+    if (!this.nativeUi) {
+      const notice = await this.paceLaunchNotice();
+      if (notice) this.onNotice(notice);
+    }
     return {
       threadId: this.threadId,
       threadPath: this.threadPath,
@@ -228,6 +251,18 @@ export class Session {
       logPath: this.logPath,
       status: this.status(),
     };
+  }
+  async paceLaunchNotice() {
+    if (this.paceLaunchChecked) return null;
+    this.paceLaunchChecked = true;
+    if (this.fixedEffort || this.manualEffort || this.mode === "inactive") return null;
+    const pace = await this.usagePace.read();
+    return this.paceNotice(pace);
+  }
+  paceNotice(pace) {
+    if (this.paceNoticeShown || pace.state !== "above") return null;
+    this.paceNoticeShown = true;
+    return "Astra-Jev — Your consumption is above pace. Using conservative effort adjustment.";
   }
   status() {
     return this.statusTracker.snapshot({
@@ -449,6 +484,14 @@ export class Session {
     });
   }
   async notification({ method, params: p }) {
+    if (method === "account/rateLimits/updated") {
+      this.usagePace.update(p);
+      return;
+    }
+    if (method === "account/updated") {
+      this.usagePace.clear();
+      return;
+    }
     if (["warning", "configWarning"].includes(method)) {
       this.onNotice(p.message ?? p.summary);
       return;

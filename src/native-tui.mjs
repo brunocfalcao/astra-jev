@@ -111,7 +111,9 @@ export class NativeTui {
         if (this.client?.readyState !== WebSocket.OPEN) return;
         // Routine reasoning decisions remain available in the decision log.
         // Only show changes that affect what the user can expect.
-        if (detail.outcome === "mode") {
+        if (detail.outcome === "pace") {
+          this.send(message);
+        } else if (detail.outcome === "mode") {
           message.params.run.entries[0].text =
             this.session.mode === "inactive"
               ? "Automatic reasoning adjustments are off for this model. Select Astra to turn them back on."
@@ -131,7 +133,7 @@ export class NativeTui {
           threadId: message.params.threadId,
           turnId: message.params.turnId,
           ...detail,
-          displayed: ["mode", "unavailable"].includes(detail.outcome),
+          displayed: ["mode", "unavailable", "pace"].includes(detail.outcome),
         });
       },
     });
@@ -316,6 +318,10 @@ export class NativeTui {
         result = await this.session.transport.request(method, params);
       }
       this.send({ id, result }, client);
+      if (["thread/start", "thread/resume"].includes(method) && this.attached) {
+        const notice = await this.session.paceLaunchNotice?.();
+        if (notice) this.effortNotices.show({ targetGeneration: 1 }, "pace", notice);
+      }
     } catch (error) {
       if (startingTurn) this.effortNotices.finish();
       this.send(

@@ -22,7 +22,7 @@ master, slave = pty.openpty()
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 35, 100, 0, 0))
 # Use the existing trusted Herd directory. The fixture stays isolated; do not
 # accept a trust prompt or add a test folder to the user's global configuration.
-child = subprocess.Popen([str(project / "bin/astra-jev.mjs"), "--sandbox", "read-only", "--cd", str(project.parent), f"Read {workspace / 'sample.txt'} and follow its instructions. Do not inspect other files."], stdin=slave, stdout=slave, stderr=slave, start_new_session=True, env={**os.environ, "TERM": "xterm-256color", "NO_COLOR": "1", "ASTRA_JEV_PRIVACY_ACK": "1"})
+child = subprocess.Popen([str(project / "bin/astra-jev.mjs"), "--sandbox", "read-only", "--cd", str(project.parent), f"Read {workspace / 'sample.txt'} and follow its instructions. Do not inspect other files."], stdin=slave, stdout=slave, stderr=slave, start_new_session=True, env={**os.environ, "TERM": "xterm-256color", "NO_COLOR": "1"})
 os.close(slave)
 transcript = ""
 result = {"passed": False}
@@ -76,16 +76,16 @@ try:
     assert any(x["type"] == "decision_selected" and x.get("evaluatedModel") for x in records)
     assert "NATIVE_TUI_OK" in transcript
     decisions = [x for x in records if x["type"] == "decision_selected" and x.get("evaluatedModel")]
-    notices = [x for x in records if x["type"] == "native_tui_effort_notice" and x.get("outcome") != "mode"]
-    assert len(notices) == len(decisions), "Each real Jev decision must produce one notice"
+    notices = [x for x in records if x["type"] == "native_tui_effort_notice" and x.get("displayed")]
+    pace_notices = [x for x in notices if x.get("outcome") == "pace"]
+    assert len(pace_notices) <= 1, "Pace notice repeated within one session"
     plain = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", transcript)
     rendered = []
-    for notice in notices:
-        outcome = notice["outcome"]
-        assert outcome in ["set", "changed", "kept"]
-        phrase = f"Astra {outcome}{' to' if outcome != 'kept' else ''} {notice['effort'].upper()} effort (Jev)"
-        assert phrase in plain, f"Native TUI did not render: {phrase}"
+    if pace_notices:
+        phrase = "Your consumption is above pace"
+        assert phrase in plain, "Native TUI did not render the pace notice"
         rendered.append(phrase)
+    assert all(x.get("outcome") in ["mode", "unavailable", "pace"] for x in notices)
     result = {"passed": True, "threadId": turns[0]["threadId"], "nativeTuiExit": child.returncode, "generationEfforts": [x["effort"] for x in generations], "checkpointCount": sum(x["type"] == "checkpoint_released" for x in records), "statusQueryVerified": True, "decisionCount": len(decisions), "renderedNotices": rendered, "logPath": log_path, "transport": "WebSocket over owner-only Unix socket; no TCP"}
 finally:
     if child.poll() is None:
