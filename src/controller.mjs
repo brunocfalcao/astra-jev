@@ -76,19 +76,17 @@ export class Controller {
     this.log("turn_preparing");
     let decision;
     try {
+      const state = this.context.state({
+        supportedEfforts: this.supportedEfforts,
+        previousEffort: this.capturedEffort,
+        step: 1,
+        newToolFailures: 0,
+      });
       this.log("evaluation_requested", {
         targetGeneration: 1,
-        contextStats: this.context.stats(),
+        contextStats: this.context.stats(state),
       });
-      decision = await this.jev.decide(
-        this.context.state({
-          supportedEfforts: this.supportedEfforts,
-          previousEffort: this.capturedEffort,
-          step: 1,
-          newToolFailures: 0,
-        }),
-        { signal: this.abort.signal },
-      );
+      decision = await this.jev.decide(state, { signal: this.abort.signal });
       if (!this.valid(decision)) throw new Error("Invalid Jev decision");
     } catch (e) {
       if (!this.active || revision !== this.revision)
@@ -343,21 +341,19 @@ export class Controller {
       try {
         const failures = this.context.failures.size;
         const inputRevision = this.inputRevision;
+        const state = this.context.state({
+          supportedEfforts: this.supportedEfforts,
+          previousEffort: this.captureEvents
+            ? this.capturedEffort
+            : this.requestedEffort,
+          step: targetGeneration,
+          newToolFailures: failures - this.assessedFailures,
+        });
         this.log("evaluation_requested", {
           targetGeneration,
-          contextStats: this.context.stats(),
+          contextStats: this.context.stats(state),
         });
-        const decision = await this.jev.decide(
-          this.context.state({
-            supportedEfforts: this.supportedEfforts,
-            previousEffort: this.captureEvents
-              ? this.capturedEffort
-              : this.requestedEffort,
-            step: targetGeneration,
-            newToolFailures: failures - this.assessedFailures,
-          }),
-          { signal },
-        );
+        const decision = await this.jev.decide(state, { signal });
         if (
           !this.active ||
           signal.aborted ||

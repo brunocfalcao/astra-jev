@@ -11,7 +11,7 @@ macOS beta · Node 22.19+ · Your Codex account + your TypeSafe API key
 Install stock Codex and sign in with an account that has GPT-6 Astra or GPT-6.1 Sol access. Then install the latest published archive:
 
 ```sh
-npm install --global --ignore-scripts 'https://github.com/brunocfalcao/astra-jev/releases/download/v1.0.1-rc.4/astra-jev-1.0.1-rc.4.tgz'
+npm install --global --ignore-scripts 'https://github.com/brunocfalcao/astra-jev/releases/download/v1.0.1-rc.5/astra-jev-1.0.1-rc.5.tgz'
 astra-jev-control setup
 astra-jev-control doctor
 ```
@@ -103,6 +103,8 @@ All `astra-jev` arguments belong to Codex. Use `astra-jev-control` for wrapper d
 Unsupported invocations—including `exec`, `review`, external remote sessions, profiles and worktrees—run stock Codex directly. Explicit permission overrides on resume also use stock Codex. `requireJev: true` blocks these fallbacks. A missing Jev key cancels an adaptive launch.
 
 One managed session owns one thread. Hosted tools, some asynchronous continuations and child threads are outside checkpoint coverage. Fresh-session leases count native generations; resumed sessions reassess each supported checkpoint and can call Jev more often. See [architecture](docs/ARCHITECTURE.md) and [compatibility](docs/COMPATIBILITY.md).
+
+Jev receives complete recent tool results when they fit a shared 96 KiB context budget, prioritizing newer results and keeping previews of older ones. Overflow remains marked and retains bounded diagnostic excerpts; evaluator requests keep the 128 KiB local ceiling. Native tool-output limits still apply before the wrapper receives a result.
 
 ### Skill, updates and removal
 

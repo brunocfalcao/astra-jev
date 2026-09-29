@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.1-rc.5 — 2026-09-29
+
+### Fixes
+- [BUG FIX] Preserve middle evidence in recent tool results that fit Jev's shared context budget, across fresh raw capture and resumed checkpoints.
+- [BUG FIX] Keep zero-length previews bounded when a crowded context requires omitting older output.
+
+### Improvements
+- [IMPROVED] Prioritize newer results within a shared 96 KiB context budget while retaining the 128 KiB request ceiling, redaction and overflow diagnostics.
+- [IMPROVED] Record truncation statistics from the exact context sent to Jev.
+
+**Release candidate:** macOS only. Native tool-output limits still apply. Historical effort misclassification is unproven; this release does not change effort policy. Independent clean-Mac proof remains pending. Restart after installing; existing sessions retain loaded code.
+
 ## 1.0.1-rc.4 — 2026-09-29
 
 ### Features

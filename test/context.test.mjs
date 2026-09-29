@@ -2,14 +2,212 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Context } from "../src/context.mjs";
 import { Controller } from "../src/controller.mjs";
+import { Jev, decisionRequest } from "../src/jev.mjs";
+
+for (const route of ["raw", "hook"])
+  test(`Jev receives middle evidence that fits its request budget through ${route} results`, async () => {
+    const requests = [],
+      records = [];
+    const context = new Context({ secrets: ["fixture-evidence-secret"] });
+    context.model = "gpt-6.1-sol";
+    const c = new Controller({
+      supportedEfforts: ["low", "high"],
+      context,
+      gated: route === "hook",
+      captureEvents: route === "raw",
+      record: (event) => records.push(event),
+      jev: new Jev({
+        key: "fixture-provider-key",
+        fetchImpl: async (_, options) => {
+          requests.push(JSON.parse(options.body));
+          return new Response(
+            JSON.stringify({
+              model: "jev-1.13.0",
+              answers: {
+                effort: { type: "choice", choice: "low" },
+                lease: { type: "choice", choice: "1" },
+              },
+            }),
+          );
+        },
+      }),
+      rpc: async () => ({ status: "applied" }),
+    });
+    await c.begin({
+      threadId: "evidence-thread",
+      prompt: "Assess the review outcome",
+      defaultEffort: "low",
+    });
+    c.attach("evidence-turn");
+    const emit = (method, extra) =>
+      c.handle(method, {
+        threadId: "evidence-thread",
+        turnId: "evidence-turn",
+        ...extra,
+      });
+    if (route === "raw")
+      await emit("rawResponseItem/completed", {
+        item: { type: "configuration_update", reasoning: { effort: "low" } },
+      });
+    let generation = 0;
+    const submit = async (id, output) => {
+      if (route === "raw") {
+        await emit("rawResponse/completed", {
+          responseId: `response-${++generation}`,
+        });
+        await emit("rawResponseItem/completed", {
+          item: { type: "function_call_output", call_id: id, output },
+        });
+      } else {
+        await c.checkpoint({
+          session_id: "evidence-thread",
+          turn_id: "evidence-turn",
+          tool_use_id: id,
+          tool_name: "read",
+          tool_input: {},
+          tool_response: output,
+        });
+      }
+    };
+    await submit("healthy", "READ_READY");
+    assert.equal(requests.at(-1).state.recentToolCalls[0].output, "READ_READY");
+    const evidence =
+      "Accepted 7 of 17 records. Approval types lost their definitions. Reviewers used different revisions.";
+    const output =
+      "Source inventory entry\n".repeat(200) + evidence +
+      "\napi_key=fixture-evidence-secret\n" +
+      "Source inventory entry\n".repeat(200);
+    assert.ok(
+      Buffer.byteLength(JSON.stringify(decisionRequest({
+        ...requests.at(-1).state,
+        recentToolCalls: [{ output }],
+      }))) < 128 * 1024,
+    );
+    await submit("review", output);
+    const sent = requests.at(-1);
+    assert.ok(sent.state.recentToolCalls.at(-1).output.includes(evidence));
+    assert.equal(sent.state.recentToolCalls.at(-1).truncation.output, false);
+    assert.equal(sent.state.recentToolCalls[0].output, "READ_READY");
+    assert.equal(JSON.stringify(sent).includes("fixture-evidence-secret"), false);
+    assert.equal(context.stats().truncatedToolCalls, 0);
+    assert.ok(Buffer.byteLength(JSON.stringify(sent)) < 128 * 1024);
+    await submit("later", "x".repeat(45000) + "RECENT_MIDDLE" + "y".repeat(45000));
+    const latest = requests.at(-1).state;
+    assert.ok(latest.recentToolCalls.at(-1).output.includes("RECENT_MIDDLE"));
+    assert.equal(latest.recentToolCalls[0].output, "READ_READY");
+    const truncated = latest.recentToolCalls.filter((call) => call.truncation.output).length;
+    assert.ok(truncated > 0);
+    assert.equal(records.filter((event) => event.type === "evaluation_requested").at(-1)
+      .contextStats.truncatedToolCalls, truncated);
+    assert.ok(Buffer.byteLength(JSON.stringify(requests.at(-1))) < 128 * 1024);
+    assert.equal(requests.length, 4);
+  });
+
+test("a shared evidence budget keeps recent middle facts and reports actual omissions", () => {
+  const context = new Context();
+  context.reset("Interpret the latest source result");
+  for (let index = 0; index < 6; index++) {
+    context.addHook({
+      tool_use_id: `source-${index}`, tool_name: "read", tool_input: {},
+      tool_response: `BEGIN-${index}\n` + "Archive passage\n".repeat(700) +
+        `MIDDLE-${index}: distinct revision and approval evidence\n` +
+        "Archive passage\n".repeat(700) + `END-${index}`,
+    });
+  }
+  const state = context.state({ supportedEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"] });
+  assert.ok(state.recentToolCalls.at(-1).output.includes("MIDDLE-5"));
+  assert.equal(state.recentToolCalls.at(-1).truncation.output, false);
+  assert.ok(state.recentToolCalls.some((call) => call.truncation.output));
+  assert.equal(context.stats().truncatedToolCalls,
+    state.recentToolCalls.filter((call) => call.truncation.output).length);
+  assert.ok(Buffer.byteLength(JSON.stringify(decisionRequest(state))) < 128 * 1024);
+  assert.deepEqual(context.state(), context.state());
+  for (const [index, call] of state.recentToolCalls.entries()) {
+    assert.ok(call.output.includes(`BEGIN-${index}`));
+    assert.ok(call.output.includes(`END-${index}`));
+  }
+});
+
+test("evidence allocation accounts for UTF-8 and JSON escaping without mutating retained results", () => {
+  const context = new Context({ secrets: ["fixture-budget-secret"] });
+  context.reset("Inspect source evidence");
+  for (let index = 0; index < 6; index++)
+    context.addHook({
+      tool_use_id: `unicode-${index}`, tool_name: "read", tool_input: {},
+      tool_response: "🙂\"\\\n".repeat(3000) +
+        `\nFACT-${index}: distinct approval evidence\npassword=fixture-budget-secret\n` +
+        "🙂\"\\\n".repeat(3000),
+    });
+  const retained = JSON.stringify(context.outputs);
+  const state = context.state({ supportedEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"] });
+  assert.ok(Buffer.byteLength(JSON.stringify(state)) <= 96 * 1024);
+  assert.ok(Buffer.byteLength(JSON.stringify(decisionRequest(state))) < 128 * 1024);
+  assert.ok(state.recentToolCalls.at(-1).output.includes("FACT-5"));
+  assert.equal(JSON.stringify(context.outputs), retained);
+  assert.equal(JSON.stringify(state).includes("fixture-budget-secret"), false);
+  assert.deepEqual(context.stats(state).truncatedToolCalls,
+    state.recentToolCalls.filter((call) => call.truncation.output).length);
+});
+
+test("zero and single-character budgets omit content while positive previews preserve both ends", () => {
+  const context = new Context();
+  assert.deepEqual(context.bounded("healthy", 7), { text: "healthy", truncated: false });
+  assert.deepEqual(context.bounded("healthy", 4), { text: "he\n[truncated]\nhy", truncated: true });
+  for (const limit of [0, 1])
+    assert.deepEqual(context.bounded("healthy", limit), { text: "\n[truncated]\n", truncated: true });
+  assert.deepEqual(context.bounded("", 0), { text: "", truncated: false });
+});
+
+test("a crowded context can omit older previews without restoring their full outputs", async () => {
+  const context = new Context();
+  context.reset("\0".repeat(1000));
+  for (let index = 0; index < 3; index++)
+    context.add({
+      type: "message",
+      role: "assistant",
+      phase: "commentary",
+      content: [{ type: "output_text", text: "\0".repeat(750) }],
+    });
+  for (let index = 0; index < 6; index++)
+    context.addHook({
+      tool_use_id: `crowded-${index}`,
+      tool_name: "read",
+      tool_input: "\0".repeat(1800),
+      tool_response: "x".repeat(10000),
+    });
+  const retained = JSON.stringify(context.outputs);
+  const state = context.state({ supportedEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"] });
+  assert.ok(Buffer.byteLength(JSON.stringify(state)) <= 96 * 1024);
+  assert.ok(Buffer.byteLength(JSON.stringify(decisionRequest(state))) < 128 * 1024);
+  assert.equal(state.recentToolCalls[0].output, "\n[truncated]\n");
+  assert.ok(state.recentToolCalls.at(-1).output.includes("x"));
+  assert.equal(JSON.stringify(context.outputs), retained);
+  const requests = [];
+  const jev = new Jev({
+    key: "fixture-crowded-key",
+    fetchImpl: async (_, options) => {
+      requests.push(JSON.parse(options.body));
+      return new Response(JSON.stringify({
+        model: "jev-1.13.0",
+        answers: {
+          effort: { type: "choice", choice: "low" },
+          lease: { type: "choice", choice: "1" },
+        },
+      }));
+    },
+  });
+  assert.equal((await jev.decide(state)).effort, "low");
+  assert.equal(requests.length, 1);
+  assert.equal(JSON.stringify(requests[0].state), JSON.stringify(state));
+});
 
 test("truncated tool previews retain bounded redacted middle diagnostics and turn provenance", () => {
   const context = new Context({ secrets: ["fixture-sensitive-key"] });
   context.reset("Install tools");
   const output =
-    "Package metadata\n".repeat(300) +
+    "Package metadata\n".repeat(3000) +
     "Dependency conflict: stable tool requires framework <=7.\nCurrent framework is 8. Preserve existing lock-file edits.\napi_key=fixture-sensitive-key\n" +
-    "More package metadata\n".repeat(300);
+    "More package metadata\n".repeat(3000);
   context.addHook({
     tool_use_id: "nested",
     tool_name: "Bash",
@@ -50,7 +248,7 @@ test("truncated tool previews retain bounded redacted middle diagnostics and tur
     tool_use_id: "many",
     tool_name: "Bash",
     tool_input: {},
-    tool_response: "Warning: fixture detail\n".repeat(1000),
+    tool_response: "Warning: fixture detail\n".repeat(10000),
   });
   const last = context.state().recentToolCalls.at(-1);
   assert.ok(last.diagnosticExcerpt.length <= 1250);
@@ -76,7 +274,7 @@ test("long conversations retain the original request and disclose omitted eviden
       tool_use_id: String(n),
       tool_name: "read",
       tool_input: {},
-      tool_response: "x".repeat(12000),
+      tool_response: "x".repeat(30000),
     };
     c.addHook(event);
     c.add({

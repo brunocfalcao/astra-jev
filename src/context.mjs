@@ -19,7 +19,55 @@ const preview = (s, max) =>
     ? s
     : s.slice(0, Math.floor(max / 2)) +
       "\n[truncated]\n" +
-      s.slice(-Math.floor(max / 2));
+      s.slice(s.length - Math.floor(max / 2));
+
+// Leave 32 KiB of the 128 KiB request limit for Jev's typed questions.
+const CONTEXT_BYTES = 96 * 1024;
+const TOOL_PREVIEW_CHARACTERS = 3000;
+
+function packToolOutputs(state, retained) {
+  const size = () => Buffer.byteLength(JSON.stringify(state));
+  const candidate = (source, characters) => {
+    const call = {
+      ...source,
+      output: preview(source.output, characters),
+      truncation: {
+        ...source.truncation,
+        output: source.truncation.output || source.output.length > characters,
+      },
+    };
+    if (!call.truncation.output) {
+      delete call.diagnosticExcerpt;
+      delete call.omittedDiagnosticExcerpts;
+    }
+    return call;
+  };
+  state.recentToolCalls = retained.map((call) =>
+    candidate(call, TOOL_PREVIEW_CHARACTERS),
+  );
+  // Preserve a preview of every result, reducing older ones only if necessary.
+  for (let index = 0; index < retained.length && size() > CONTEXT_BYTES; index++)
+    state.recentToolCalls[index] = candidate(retained[index], 0);
+  // Spend the remaining shared budget on complete evidence, newest first.
+  for (let index = retained.length - 1; index >= 0; index--) {
+    const source = retained[index];
+    let best = state.recentToolCalls[index];
+    state.recentToolCalls[index] = candidate(source, source.output.length);
+    if (size() <= CONTEXT_BYTES) continue;
+    let low = 0,
+      high = source.output.length;
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      state.recentToolCalls[index] = candidate(source, middle);
+      if (size() <= CONTEXT_BYTES) {
+        best = state.recentToolCalls[index];
+        low = middle + 1;
+      } else high = middle - 1;
+    }
+    state.recentToolCalls[index] = best;
+  }
+  return state;
+}
 
 // Hook results can contain MCP media blocks. Only textual/structured public data
 // belongs in Jev's state; never stringify encrypted or binary content blocks.
@@ -73,10 +121,10 @@ export class Context {
       this.secrets,
     );
     const bounded = {
-      text: preview(text, 3000),
-      truncated: text.length > 3000,
+      text: preview(text, CONTEXT_BYTES),
+      truncated: text.length > CONTEXT_BYTES,
     };
-    if (!bounded.truncated) return bounded;
+    if (text.length <= TOOL_PREVIEW_CHARACTERS) return bounded;
     // Structured tool text often contains escaped newlines inside JSON.
     const lines = text.replaceAll("\\n", "\n").split("\n");
     const excerpts = [];
@@ -202,7 +250,8 @@ export class Context {
       ...(Number.isInteger(item.exitCode) ? { exitCode: item.exitCode } : {}),
     });
   }
-  stats() {
+  stats(state = this.state()) {
+    const outputs = state.recentToolCalls;
     return {
       userPrompts: this.userPromptCount,
       toolCalls: this.outputs.length,
@@ -212,12 +261,12 @@ export class Context {
       ),
       publicNotes: this.notes.length,
       toolFailures: this.failures.size,
-      truncatedToolCalls: this.outputs.filter(
+      truncatedToolCalls: outputs.filter(
         (x) => x.truncation?.input || x.truncation?.output,
       ).length,
-      diagnosticToolCalls: this.outputs.filter((x) => x.diagnosticExcerpt)
+      diagnosticToolCalls: outputs.filter((x) => x.diagnosticExcerpt)
         .length,
-      omittedDiagnosticExcerpts: this.outputs.reduce(
+      omittedDiagnosticExcerpts: outputs.reduce(
         (sum, x) => sum + (x.omittedDiagnosticExcerpts ?? 0),
         0,
       ),
@@ -288,7 +337,7 @@ export class Context {
     }
   }
   state(extra = {}) {
-    return {
+    const state = {
       model: this.model ?? "gpt-6-astra",
       latestUserPrompt: this.prompt,
       userPromptIndex: this.userPromptCount,
@@ -300,7 +349,7 @@ export class Context {
         images: this.imageCount ?? 0,
         imageContentVisibleToEvaluator: false,
       },
-      recentToolCalls: [...this.outputs],
+      recentToolCalls: [],
       recentToolFailures: [...this.failures.values()].slice(-6),
       historyScope: this.historyScope ?? "bounded_live_public_events",
       omittedOlderUserPrompts: Math.max(
@@ -318,7 +367,8 @@ export class Context {
       contextLimits: {
         promptCharacters: 8000,
         toolCalls: 6,
-        toolOutputCharacters: 3000,
+        toolOutputCharacters: CONTEXT_BYTES,
+        contextBytes: CONTEXT_BYTES,
         diagnosticExcerptCharacters: 1200,
         hiddenReasoningIncluded: false,
         latestPromptTruncated: this.promptTruncated,
@@ -326,5 +376,6 @@ export class Context {
       },
       ...extra,
     };
+    return packToolOutputs(state, this.outputs);
   }
 }

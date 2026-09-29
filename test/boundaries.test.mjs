@@ -38,7 +38,7 @@ test("bounded state excludes hidden reasoning and masks known keys and credentia
   const state = c.state();
   const text = JSON.stringify(state);
   assert.equal(state.recentToolCalls.length, 6);
-  assert.ok(text.length < 40000);
+  assert.ok(Buffer.byteLength(text) <= 96 * 1024);
   for (const secret of [
     "PRIVATE_REASONING",
     "PRIVATE_CIPHER",
