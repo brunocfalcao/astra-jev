@@ -22,4 +22,4 @@ With explicit owner authorization, create the release commit/tag and GitHub rele
 
 ## Rollback
 
-Install the previous reviewed archive. No automatic config migrations or data deletions occur. Existing processes keep their loaded code; exit and restart them. Compatibility or permission failures must stop a managed launch rather than silently relaxing its policy.
+Install the previous reviewed archive. Before launching rc.1, remove the new `effortAdjustment` field from a project file; preserve its other settings. Existing processes keep their loaded code; exit and restart them. Compatibility or permission failures must stop a managed launch rather than silently relaxing its policy.

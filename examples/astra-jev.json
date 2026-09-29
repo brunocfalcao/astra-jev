@@ -3,5 +3,6 @@
   "enabled": true,
   "verbose": true,
   "fixedEffort": null,
+  "effortAdjustment": "default",
   "requireJev": false
 }

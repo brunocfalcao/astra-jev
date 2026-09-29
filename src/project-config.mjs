@@ -1,14 +1,38 @@
-import { readFile, writeFile, link, unlink, rename } from "node:fs/promises";
+import {
+  readFile,
+  writeFile,
+  link,
+  unlink,
+  rename,
+} from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export const defaults = Object.freeze({
   version: 1,
   enabled: true,
   verbose: true,
   fixedEffort: null,
+  effortAdjustment: "default",
   requireJev: false,
 });
+
+async function replaceIfUnchanged(path, before, next) {
+  const temporary = join(dirname(path), `.astra-jev-${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporary, JSON.stringify(next, null, 2) + "\n", {
+      flag: "wx",
+      mode: 0o600,
+    });
+    if ((await readFile(path, "utf8")) !== before) return false;
+    await rename(temporary, path);
+    return true;
+  } finally {
+    await unlink(temporary).catch((error) => {
+      if (error.code !== "ENOENT") throw error;
+    });
+  }
+}
 
 export async function projectConfig(cwd) {
   const path = join(cwd, "astra-jev.json");
@@ -30,15 +54,27 @@ export async function projectConfig(cwd) {
       await unlink(temporary);
     }
   }
-  let value;
-  try {
-    value = JSON.parse(await readFile(path, "utf8"));
-  } catch {
-    throw new Error(
-      "Cannot read astra-jev.json as JSON; existing file was preserved",
-    );
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const before = await readFile(path, "utf8");
+    let value;
+    try {
+      value = JSON.parse(before);
+    } catch {
+      throw new Error(
+        "Cannot read astra-jev.json as JSON; existing file was preserved",
+      );
+    }
+    const config = resolveConfig(value);
+    if (Object.hasOwn(value, "effortAdjustment")) return config;
+    if (
+      await replaceIfUnchanged(path, before, {
+        ...value,
+        effortAdjustment: defaults.effortAdjustment,
+      })
+    )
+      return config;
   }
-  return resolveConfig(value);
+  throw new Error("Project settings changed during upgrade; retry with the current file");
 }
 
 function resolveConfig(value) {
@@ -56,6 +92,7 @@ function resolveConfig(value) {
   const config = { ...defaults, ...settings };
   if (
     config.version !== 1 ||
+    !["conservative", "default", "optimistic"].includes(config.effortAdjustment) ||
     typeof config.enabled !== "boolean" ||
     typeof config.verbose !== "boolean" ||
     typeof config.requireJev !== "boolean" ||
@@ -79,21 +116,9 @@ export async function setProjectSetting(cwd, key, value) {
   const before = await readFile(path, "utf8");
   const next = { ...JSON.parse(before), [key]: value };
   const config = resolveConfig(next);
-  const temporary = join(cwd, `.astra-jev-${randomUUID()}.tmp`);
-  try {
-    await writeFile(temporary, JSON.stringify(next, null, 2) + "\n", {
-      flag: "wx",
-      mode: 0o600,
-    });
-    if ((await readFile(path, "utf8")) !== before)
-      throw new Error(
-        "Project settings changed during this update; retry with the current file",
-      );
-    await rename(temporary, path);
-  } finally {
-    await unlink(temporary).catch((error) => {
-      if (error.code !== "ENOENT") throw error;
-    });
-  }
+  if (!(await replaceIfUnchanged(path, before, next)))
+    throw new Error(
+      "Project settings changed during this update; retry with the current file",
+    );
   return config;
 }

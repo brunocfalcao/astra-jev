@@ -6,6 +6,35 @@ import { Status } from "./status.mjs";
 import { stat, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 
+const effortOrder = ["low", "medium", "high", "xhigh", "max", "ultra"];
+
+export function applyEffortAdjustment(
+  decision,
+  effortAdjustment,
+  supportedEfforts,
+) {
+  const levels = effortOrder.filter((level) => supportedEfforts.includes(level));
+  const index = levels.indexOf(decision.effort);
+  if (index < 0) throw new Error("Unsupported Jev effort");
+  let adjusted = index;
+  if (effortAdjustment === "conservative") adjusted = Math.max(0, index - 1);
+  else if (effortAdjustment === "optimistic") {
+    const max = levels.indexOf("max");
+    const ultra = levels.indexOf("ultra");
+    adjusted = Math.min(
+      index + 1,
+      max >= 0 ? max : ultra >= 0 ? ultra - 1 : levels.length - 1,
+    );
+  }
+  if (adjusted < 0) throw new Error("No supported effort at or below Max");
+  return {
+    ...decision,
+    jevEffort: decision.effort,
+    effortAdjustment,
+    effort: levels[adjusted],
+  };
+}
+
 export class Session {
   constructor({
     jev,
@@ -20,6 +49,7 @@ export class Session {
     config = [],
     cwd = process.cwd(),
     fixedEffort = null,
+    effortAdjustment = "default",
     threadOptions = {},
     nativeUi = false,
     requireJev = false,
@@ -35,6 +65,7 @@ export class Session {
       onRequest,
       cwd,
       fixedEffort,
+      effortAdjustment,
       threadOptions,
       requireJev,
     });
@@ -101,7 +132,11 @@ export class Session {
         let decision, failure;
         try {
           decision = await this.jev.decide(state, options);
-          return decision;
+          return applyEffortAdjustment(
+            decision,
+            this.effortAdjustment,
+            efforts,
+          );
         } catch (error) {
           failure = error;
           throw error;

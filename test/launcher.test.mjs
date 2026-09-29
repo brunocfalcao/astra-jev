@@ -1,27 +1,55 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import {
+  mkdtemp,
+  readFile,
+  writeFile,
+  rm,
+  readdir,
+  chmod,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { projectConfig, defaults } from "../src/project-config.mjs";
 import { planLaunch, runCodex, exitCode } from "../src/codex-launch.mjs";
 
-test("project config creates defaults once and preserves existing and invalid files", async () => {
+test("project config creates defaults and upgrades valid older files without losing settings", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "astra-config-"));
   const path = join(cwd, "astra-jev.json");
   try {
     await assert.rejects(readFile(path), { code: "ENOENT" });
     const results = await Promise.all([projectConfig(cwd), projectConfig(cwd)]);
     assert.deepEqual(results, [defaults, defaults]);
-    const custom = '{"enabled":false,"fixedEffort":"high"}\n';
+    const custom =
+      '{"enabled":false,"fixedEffort":"high","resumePermissions":"workspace-write","noAltScreen":true}\n';
     await writeFile(path, custom);
-    assert.deepEqual(await projectConfig(cwd), {
+    const expected = {
       ...defaults,
       enabled: false,
       fixedEffort: "high",
+    };
+    assert.deepEqual(await Promise.all([projectConfig(cwd), projectConfig(cwd)]), [
+      expected,
+      expected,
+    ]);
+    assert.deepEqual(JSON.parse(await readFile(path, "utf8")), {
+      enabled: false,
+      fixedEffort: "high",
+      resumePermissions: "workspace-write",
+      noAltScreen: true,
+      effortAdjustment: "default",
     });
-    assert.equal(await readFile(path, "utf8"), custom);
+    assert.deepEqual(await readdir(cwd), ["astra-jev.json"]);
+    for (const effortAdjustment of ["conservative", "default", "optimistic"]) {
+      const contents = JSON.stringify({ effortAdjustment, verbose: false });
+      await writeFile(path, contents);
+      assert.equal(
+        (await projectConfig(cwd)).effortAdjustment,
+        effortAdjustment,
+      );
+      assert.equal(await readFile(path, "utf8"), contents);
+    }
     for (const invalid of [
       "{bad",
       "null",
@@ -29,6 +57,7 @@ test("project config creates defaults once and preserves existing and invalid fi
       '{"enabled":"false"}',
       '{"version":2}',
       '{"fixedEffort":"bogus"}',
+      '{"effortAdjustment":"bogus"}',
       '{"apiKey":"synthetic-secret"}',
     ]) {
       await writeFile(path, invalid);
@@ -52,13 +81,33 @@ test("project verbosity defaults on, accepts quiet mode and rejects non-booleans
       const contents = JSON.stringify({ verbose });
       await writeFile(path, contents);
       assert.equal((await projectConfig(cwd)).verbose, verbose);
-      assert.equal(await readFile(path, "utf8"), contents);
+      assert.deepEqual(JSON.parse(await readFile(path, "utf8")), {
+        verbose,
+        effortAdjustment: "default",
+      });
     }
     for (const verbose of ["false", null, 0, [], {}]) {
       await writeFile(path, JSON.stringify({ verbose }));
       await assert.rejects(projectConfig(cwd), /Invalid astra-jev.json/);
     }
   } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("valid current project settings load without write access", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "astra-read-only-config-"));
+  const path = join(cwd, "astra-jev.json");
+  try {
+    await writeFile(path, JSON.stringify({ effortAdjustment: "optimistic" }));
+    await chmod(path, 0o400);
+    await chmod(cwd, 0o500);
+    assert.deepEqual(await projectConfig(cwd), {
+      ...defaults,
+      effortAdjustment: "optimistic",
+    });
+  } finally {
+    await chmod(cwd, 0o700);
     await rm(cwd, { recursive: true, force: true });
   }
 });
@@ -90,7 +139,12 @@ test("project settings omit permissions and accept obsolete resume modes without
         ...defaults,
         verbose: false,
       });
-      assert.equal(await readFile(path, "utf8"), contents);
+      assert.deepEqual(JSON.parse(await readFile(path, "utf8")), {
+        resumePermissions,
+        noAltScreen: true,
+        verbose: false,
+        effortAdjustment: "default",
+      });
     }
   } finally {
     await rm(cwd, { recursive: true, force: true });

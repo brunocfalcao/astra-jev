@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.1-rc.2 — 2026-09-29
+
+### Features
+- [NEW FEATURE] Add per-project `effortAdjustment` controls: conservative, default and optimistic. Jev’s original choice stays in decision evidence while Astra receives the adjusted supported effort.
+
+### Improvements
+- [IMPROVED] Safely upgrade valid older project settings with the explicit default while preserving their existing values; malformed and invalid files remain unchanged.
+- [IMPROVED] Keep adjusted efforts within the supported Astra catalog, with a Low floor and an optimistic Max ceiling.
+
+**Release candidate:** macOS only. Independent clean-Mac proof remains pending. Restart after installing; existing processes retain loaded code.
+
 ## 1.0.1-rc.1 — 2026-09-28
 
 ### Features

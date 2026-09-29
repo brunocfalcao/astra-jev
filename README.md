@@ -11,7 +11,7 @@ macOS beta · Node 22.19+ · Your Codex account + your TypeSafe API key
 Install stock Codex and sign in with an account that has GPT-6 Astra access. Then install the latest published archive:
 
 ```sh
-npm install --global --ignore-scripts 'https://github.com/brunocfalcao/astra-jev/releases/download/v1.0.1-rc.1/astra-jev-1.0.1-rc.1.tgz'
+npm install --global --ignore-scripts 'https://github.com/brunocfalcao/astra-jev/releases/download/v1.0.1-rc.2/astra-jev-1.0.1-rc.2.tgz'
 astra-jev-control setup
 astra-jev-control doctor
 ```
@@ -65,16 +65,19 @@ astra-jev-control status --table
 
 ### Project settings
 
-The first launch creates `astra-jev.json`; existing files are preserved.
+The first launch creates `astra-jev.json`. Valid files from earlier releases are safely upgraded to add `"effortAdjustment": "default"`; existing values stay unchanged. Invalid files are preserved and reported.
 
 | Setting | Default | Effect |
 | --- | --- | --- |
 | `enabled` | `true` | Enable the managed integration. |
 | `fixedEffort` | `null` | Use Jev, or choose `low`, `medium`, `high`, `xhigh`, `max`, `ultra`. |
+| `effortAdjustment` | `"default"` | `conservative` lowers Jev’s choice one supported level (floor Low); `default` preserves it; `optimistic` raises it one supported level (ceiling Max, including Ultra choices). Fixed effort is unchanged. |
 | `requireJev` | `false` | Refuse fixed/direct launches and non-Astra selection; stop on evaluator or effort-publication failure. |
 | `verbose` | `true` | Control routine notice generation; the native TUI hides routine effort notices either way. |
 
 Add `--cwd PATH` to configuration commands to target another project. Legacy `resumePermissions` and `noAltScreen` settings are ignored. Use native Codex controls for permissions and `--no-alt-screen` for inline rendering.
+
+Set your preference with `astra-jev-control config set effortAdjustment conservative`, then restart. Decision logs retain both Jev’s original choice (`jevEffort`) and the applied effort.
 
 ### Status
 

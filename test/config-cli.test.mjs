@@ -62,11 +62,20 @@ test("configuration CLI creates defaults and changes only requested settings wit
       );
       assert.equal(JSON.parse(result.stdout).settings.verbose, false);
     }
+    for (const value of ["conservative", "default", "optimistic"]) {
+      const result = run(cwd, ["set", "effortAdjustment", value]);
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(
+        JSON.parse(result.stdout).settings.effortAdjustment,
+        value,
+      );
+    }
     assert.equal(run(cwd, ["set", "requireJev", "true"]).status, 0);
     const before = await readFile(path, "utf8");
     for (const args of [
       ["set", "enabled", "false"],
       ["set", "fixedEffort", "high"],
+      ["set", "effortAdjustment", "invalid"],
       ["set", "verbose", "null"],
       ["set", "verbose", "1"],
       ["set", "version", "2"],

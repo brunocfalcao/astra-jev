@@ -410,6 +410,7 @@ try {
       nativeUi: options.tui,
       cwd: options.cwd,
       fixedEffort: options.fixedEffort,
+      effortAdjustment: (await projectConfig(options.cwd)).effortAdjustment,
       jev: key ? new Jev({ key }) : null,
       secrets: key ? [key] : [],
       record,

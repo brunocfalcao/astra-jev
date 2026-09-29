@@ -66,6 +66,7 @@ try {
         nativeUi: true,
         config: [...plan.config],
         fixedEffort: config.fixedEffort,
+        effortAdjustment: config.effortAdjustment,
         requireJev: config.requireJev,
         jev: key ? new Jev({ key }) : null,
         secrets: key ? [key] : [],
