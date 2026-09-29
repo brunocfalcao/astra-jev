@@ -82,25 +82,24 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
     });
   else if (m.method === "model/list")
     reply({
-      data: [
-        {
-          id: "gpt-6-astra",
-          model: "gpt-6-astra",
-          defaultReasoningEffort: "high",
-          supportedReasoningEfforts: ["low", "high"].map((reasoningEffort) => ({
-            reasoningEffort,
-          })),
-        },
-      ],
+      data: ["gpt-6-astra", "gpt-6.1-sol"].map((model) => ({
+        id: model,
+        model,
+        defaultReasoningEffort: "high",
+        supportedReasoningEfforts: ["low", "high"].map((reasoningEffort) => ({
+          reasoningEffort,
+        })),
+      })),
     });
   else if (["thread/start", "thread/resume"].includes(m.method)) {
+    currentModel = p.model ?? "gpt-6-astra";
     captureEvents = m.method === "thread/start";
     await boot();
     trusted =
       p.config?.["hooks.state"]?.[hook.key]?.trusted_hash === hook.currentHash;
     reply({
       thread: { id: "thread-checkpoint", path: null, turns: [] },
-      model: "gpt-6-astra",
+      model: p.model ?? "gpt-6-astra",
       sandbox: {
         type: p.sandbox === "read-only" ? "readOnly" : "workspaceWrite",
       },
@@ -128,7 +127,8 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
     };
     currentModel =
       p.collaborationMode?.settings?.model ?? p.model ?? currentModel;
-    currentEffort = p.collaborationMode?.settings?.reasoning_effort ?? p.effort;
+    currentEffort =
+      p.collaborationMode?.settings?.reasoning_effort ?? p.effort ?? "high";
     reply({ turn: { id: turnId, status: "inProgress" } });
     event("turn/started", { turn: { id: turnId } });
     event("rawResponseItem/completed", {
@@ -138,7 +138,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       },
     });
     event("rawResponse/completed", { responseId: `${turnId}-r1` });
-    if (child && trusted)
+    if (child && trusted) {
       await rpc("tools/call", {
         name: "checkpoint",
         arguments: {
@@ -150,6 +150,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
           tool_response: "New complex evidence",
         },
       });
+    }
     event("rawResponseItem/completed", {
       item: {
         type: "function_call_output",

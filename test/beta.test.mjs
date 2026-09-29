@@ -157,7 +157,16 @@ test("resumed sessions leave native permissions unchanged across Astra and Sol t
           params: settings,
         });
       }
+      assert.equal(decisions, 1);
+      assert.equal(s.status().jevPaused, true);
+      s.enableJev();
+      await s.startTurn({
+        model: "gpt-6-astra",
+        input: [],
+        sandboxPolicy: sandbox,
+      });
       assert.equal(decisions, 2);
+      assert.deepEqual(transport.calls.at(-1).params.sandboxPolicy, sandbox);
     } finally {
       await s.close();
     }

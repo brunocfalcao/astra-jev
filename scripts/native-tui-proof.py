@@ -30,7 +30,7 @@ try:
     deadline = time.monotonic() + 90
     exited = False
     log_path = None
-    status_name = None
+    status_name = f"tui-{child.pid}"
     records = []
     while time.monotonic() < deadline and child.poll() is None:
         if select.select([master], [], [], 0.2)[0]:
@@ -47,23 +47,18 @@ try:
             if b"\x1b[c" in data:
                 os.write(master, b"\x1b[?1;2c")
         if not log_path:
-            match = re.search(r"Decision log: ([^\r\n]+)", transcript)
+            status = subprocess.run([str(project / "bin/astra-jev-control.mjs"), "--status", status_name], capture_output=True, text=True, timeout=10)
+            match = re.search(r"Decision log: ([^\r\n]+)", status.stdout)
             if match:
                 log_path = match.group(1)
-        if not status_name:
-            match = re.search(r"--status (tui-\d+)", transcript)
-            if match:
-                status_name = match.group(1)
         if log_path:
             records = [json.loads(line) for line in pathlib.Path(log_path).read_text().splitlines()]
         if not exited and any(x["type"] == "turn_completed" for x in records):
             status = subprocess.run([str(project / "bin/astra-jev-control.mjs"), "--status", status_name], capture_output=True, text=True, timeout=10)
             assert status.returncode == 0 and "Jev: responding" in status.stdout
-            # Codex's paste-burst detection treats a whole prompt+Enter in one
-            # PTY write as pasted text. Type the command, then press Enter.
-            os.write(master, b"/quit")
-            time.sleep(0.3)
-            os.write(master, b"\r")
+            # Let the native composer regain focus, then use its exit shortcut.
+            time.sleep(1)
+            os.write(master, b"\x04")
             exited = True
     child.wait(timeout=2)
     assert child.returncode == 0

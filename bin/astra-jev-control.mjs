@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { Jev } from "../src/jev.mjs";
+import { isManagedModel } from "../src/models.mjs";
 import { Session } from "../src/session.mjs";
 import { AppServer } from "../src/app-server.mjs";
 import { redact } from "../src/context.mjs";
@@ -25,6 +26,7 @@ import { ensureKey, setup } from "../src/onboarding.mjs";
 import { ensureSkill } from "../src/skill.mjs";
 import { projectConfig, setProjectSetting } from "../src/project-config.mjs";
 import {
+  enableSession,
   SessionHost,
   SessionClient,
   sessionSocket,
@@ -36,10 +38,20 @@ const args = process.argv.slice(2),
 let session, terminal, key, host, logFd, nativeTui;
 function usage() {
   console.log(
-    "Usage: astra-jev-control [--cwd DIR] [--resume THREAD_ID] [--read-only] [--fixed-effort LEVEL] [--image PATH] [PROMPT]\n       astra-jev-control --tui [--cwd DIR] [--read-only] [PROMPT]\n       astra-jev-control --serve NAME [--cwd DIR] [--read-only]\n       astra-jev-control --attach NAME [--image PATH] [PROMPT]\n       astra-jev-control --status NAME\n       astra-jev-control --stop NAME\n       astra-jev-control status [--table | --list | --thread THREAD_ID | --latest]\n       astra-jev-control doctor\n       astra-jev-control setup\n       astra-jev-control install-skill\n       astra-jev-control config [--cwd DIR]\n       astra-jev-control config set KEY VALUE [--cwd DIR]\n\nWithout PROMPT, opens a terminal conversation. /help lists controls. Ctrl-C interrupts.\n--tui opens the stock Codex interface with Jev control; startup prints its live-status command.\n--serve keeps the native session alive in the foreground until stopped.\nstatus reads recent local evidence; --status queries a live named host. Neither calls Jev.\nExperimental: synchronous checkpoints cover supported local tools. Restarted threads use Jev per turn.",
+    "Usage: astra-jev-control [--cwd DIR] [--resume THREAD_ID] [--read-only] [--fixed-effort LEVEL] [--image PATH] [PROMPT]\n       astra-jev-control --tui [--cwd DIR] [--read-only] [PROMPT]\n       astra-jev-control --serve NAME [--cwd DIR] [--read-only]\n       astra-jev-control --attach NAME [--image PATH] [PROMPT]\n       astra-jev-control --status NAME\n       astra-jev-control --stop NAME\n       astra-jev-control enable\n       astra-jev-control status [--table | --list | --thread THREAD_ID | --latest]\n       astra-jev-control doctor\n       astra-jev-control setup\n       astra-jev-control install-skill\n       astra-jev-control config [--cwd DIR]\n       astra-jev-control config set KEY VALUE [--cwd DIR]\n\nWithout PROMPT, opens a terminal conversation. /help lists controls. Ctrl-C interrupts.\n--tui opens the stock Codex interface with Jev control; startup prints its live-status command.\n--serve keeps the native session alive in the foreground until stopped.\nstatus reads recent local evidence; --status queries a live named host. Neither calls Jev.\nExperimental: synchronous checkpoints cover supported local tools. Restarted threads use Jev per turn.",
   );
 }
 try {
+  if (args[0] === "enable") {
+    if (args.length !== 1) throw new Error("Usage: astra-jev-control enable");
+    const status = await enableSession(process.env.CODEX_THREAD_ID);
+    console.log(
+      status.enablePending
+        ? "Astra-Jev will activate on the next turn."
+        : "Astra-Jev enabled.",
+    );
+    process.exit(0);
+  }
   if (args[0] === "status") {
     const tail = args.slice(1);
     if (tail.length === 1 && tail[0] === "--table") {
@@ -65,14 +77,16 @@ try {
           : "No recorded Astra + Jev sessions",
       );
     } else {
-      if (!(
-        tail.length === 0 ||
-        (tail.length === 1 && tail[0] === "--latest") ||
-        (tail.length === 2 &&
-          tail[0] === "--thread" &&
-          tail[1] &&
-          !tail[1].startsWith("-"))
-      ))
+      if (
+        !(
+          tail.length === 0 ||
+          (tail.length === 1 && tail[0] === "--latest") ||
+          (tail.length === 2 &&
+            tail[0] === "--thread" &&
+            tail[1] &&
+            !tail[1].startsWith("-"))
+        )
+      )
         throw new Error(
           "Usage: status [--table | --list | --thread THREAD_ID | --latest]",
         );
@@ -258,12 +272,16 @@ try {
       const astra = models.data.find(
         (x) => x.model === "gpt-6-astra" || x.id === "gpt-6-astra",
       );
-      if (!astra) throw new Error("Astra unavailable");
+      const managed = models.data.filter((x) =>
+        isManagedModel(x.model ?? x.id),
+      );
+      const selected = managed.find((x) => x.isDefault) ?? astra ?? managed[0];
+      if (!selected) throw new Error("Astra and GPT-6.1 Sol unavailable");
       const account = await server.request("account/read", {});
       const result = key
         ? await new Jev({ key }).decide({
-            model: "gpt-6-astra",
-            supportedEfforts: astra.supportedReasoningEfforts.map(
+            model: selected.model ?? selected.id,
+            supportedEfforts: selected.supportedReasoningEfforts.map(
               (x) => x.reasoningEffort,
             ),
             latestUserPrompt: "Synthetic health check: report the word READY.",
@@ -272,13 +290,15 @@ try {
       console.log(
         JSON.stringify(
           {
-            astraAvailable: true,
+            astraAvailable: !!astra,
+            managedModels: managed.map((x) => x.model ?? x.id),
+            checkedModel: selected.model ?? selected.id,
             codexUserAgent: initialized.userAgent ?? "unknown",
             authentication: account.account?.type ?? "unknown",
             jevVerified: !!result,
             jevModel: result?.evaluatedModel,
             jevLatencyMs: result?.latencyMs,
-            efforts: astra.supportedReasoningEfforts.map(
+            efforts: selected.supportedReasoningEfforts.map(
               (x) => x.reasoningEffort,
             ),
           },

@@ -1,3 +1,4 @@
+import { isManagedModel } from "./models.mjs";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
@@ -60,12 +61,12 @@ const directOptions = new Set([
 // Unknown syntax belongs to Codex, including its validation and future flags.
 export function planLaunch(args, cwd = process.cwd()) {
   const initialCwd = cwd;
+  let selectedModel;
   let command,
     positional = false,
     reason,
     permissionOverride = false,
     externalRemote = false,
-    hasModel = false,
     hasCwd = false;
   const config = [];
   for (let i = 0; i < args.length; i++) {
@@ -99,9 +100,9 @@ export function planLaunch(args, cwd = process.cwd()) {
       reason = "option requires stock Codex's own runtime";
     if (name === "--remote") externalRemote = true;
     if (["-m", "--model"].includes(name)) {
-      hasModel = true;
-      if (value !== "gpt-6-astra")
-        reason = "Jev integration supports Astra only";
+      selectedModel = value;
+      if (!isManagedModel(value))
+        reason = "Jev integration does not support this model";
     }
     if (
       [
@@ -145,16 +146,14 @@ export function planLaunch(args, cwd = process.cwd()) {
   if (command === "resume" && permissionOverride)
     reason = "stock remote resume cannot apply permission overrides";
   return {
+    model: selectedModel,
     cwd: externalRemote ? initialCwd : cwd,
     command,
     resume: command === "resume",
     config,
     direct: !!reason,
     reason,
-    defaults: [
-      ...(hasModel ? [] : ["--model", "gpt-6-astra"]),
-      ...(hasCwd ? [] : ["--cd", initialCwd]),
-    ],
+    defaults: hasCwd ? [] : ["--cd", initialCwd],
   };
 }
 

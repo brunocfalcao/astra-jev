@@ -41,7 +41,13 @@ export class Controller {
       [1, 2, 5, 10].includes(d.leaseSteps)
     );
   }
-  async begin({ threadId, prompt, defaultEffort, imageCount = 0, checkpointEvent }) {
+  async begin({
+    threadId,
+    prompt,
+    defaultEffort,
+    imageCount = 0,
+    checkpointEvent,
+  }) {
     this.abort?.abort();
     this.revision++;
     this.abort = new AbortController();
@@ -397,7 +403,7 @@ export class Controller {
         stage = "publication";
         let result;
         try {
-          result = await this.rpc(
+          const publication = this.rpc(
             "turn/settings/update",
             {
               threadId: this.threadId,
@@ -406,10 +412,16 @@ export class Controller {
             },
             { timeoutMs: 4000 },
           );
+          this.publication = publication;
+          try {
+            result = await publication;
+          } finally {
+            if (this.publication === publication) this.publication = null;
+          }
         } catch (error) {
           // An unacknowledged update might still be queued. Stop its turn before
           // releasing the native checkpoint rather than allow a late change.
-          if (this.gated) {
+          if (this.gated && revision === this.revision && this.active) {
             this.stop();
             await this.onFatal();
           }
@@ -470,5 +482,16 @@ export class Controller {
   stop() {
     this.active = false;
     this.abort?.abort();
+  }
+  suspend() {
+    // A user setting change must prevent a slow evaluator from publishing after
+    // that setting. Do not wait for evaluators that ignore cancellation.
+    this.revision++;
+    this.abort?.abort();
+    this.abort = new AbortController();
+    this.pending = null;
+    this.remaining = 0;
+    this.inFlight = null;
+    this.checkpoints = new Map();
   }
 }

@@ -111,7 +111,7 @@ export class NativeTui {
         if (this.client?.readyState !== WebSocket.OPEN) return;
         // Routine reasoning decisions remain available in the decision log.
         // Only show changes that affect what the user can expect.
-        if (detail.outcome === "pace") {
+        if (["pace", "policy"].includes(detail.outcome)) {
           this.send(message);
         } else if (detail.outcome === "mode") {
           message.params.run.entries[0].text =
@@ -133,7 +133,9 @@ export class NativeTui {
           threadId: message.params.threadId,
           turnId: message.params.turnId,
           ...detail,
-          displayed: ["mode", "unavailable", "pace"].includes(detail.outcome),
+          displayed: ["mode", "unavailable", "pace", "policy"].includes(
+            detail.outcome,
+          ),
         });
       },
     });
@@ -283,12 +285,9 @@ export class NativeTui {
       } else if (method === "turn/steer") {
         this.requireThread(params);
         result = await this.session.steerTurn(params);
-      } else if (
-        this.session.mode === "inactive" &&
-        method === "turn/settings/update"
-      ) {
+      } else if (method === "turn/settings/update") {
         this.requireThread(params);
-        result = await this.session.transport.request(method, params);
+        result = await this.session.updateSettings(params, method);
       } else if (method === "thread/resume") {
         this.requireThread(params);
         result = await this.session.transport.request(method, {
@@ -313,14 +312,21 @@ export class NativeTui {
       else {
         // Before resume selection, Codex needs read-only access to candidate
         // threads for its native picker and name/ID lookup.
-        if (params.threadId && !(method === "thread/read" && !this.attached))
+        if (
+          params.threadId &&
+          !(
+            ["thread/read", "thread/turns/list"].includes(method) &&
+            !this.attached
+          )
+        )
           this.requireThread(params);
         result = await this.session.transport.request(method, params);
       }
       this.send({ id, result }, client);
       if (["thread/start", "thread/resume"].includes(method) && this.attached) {
         const notice = await this.session.paceLaunchNotice?.();
-        if (notice) this.effortNotices.show({ targetGeneration: 1 }, "pace", notice);
+        if (notice)
+          this.effortNotices.show({ targetGeneration: 1 }, "pace", notice);
       }
     } catch (error) {
       if (startingTurn) this.effortNotices.finish();
@@ -342,12 +348,7 @@ export class NativeTui {
         "This native TUI is connected to a different owned thread",
       );
   }
-  async launch({
-    cwd,
-    prompt,
-    codexArgs,
-    defaults = ["--model", "gpt-6-astra"],
-  } = {}) {
+  async launch({ cwd, prompt, codexArgs, defaults = [] } = {}) {
     const args = ["--remote", `unix://${this.path}`, ...defaults];
     if (codexArgs) args.push(...codexArgs);
     else {

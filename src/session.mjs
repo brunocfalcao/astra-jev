@@ -1,3 +1,4 @@
+import { DEFAULT_MODEL, isManagedModel } from "./models.mjs";
 import { AppServer } from "./app-server.mjs";
 import { Controller } from "./controller.mjs";
 import { Context } from "./context.mjs";
@@ -14,7 +15,9 @@ export function applyEffortAdjustment(
   effortAdjustment,
   supportedEfforts,
 ) {
-  const levels = effortOrder.filter((level) => supportedEfforts.includes(level));
+  const levels = effortOrder.filter((level) =>
+    supportedEfforts.includes(level),
+  );
   const index = levels.indexOf(decision.effort);
   if (index < 0) throw new Error("Unsupported Jev effort");
   let adjusted = index;
@@ -38,6 +41,7 @@ export function applyEffortAdjustment(
 
 export class Session {
   constructor({
+    model,
     jev,
     secrets = [],
     record = () => {},
@@ -71,6 +75,7 @@ export class Session {
       requireJev,
       nativeUi,
     });
+    this.launchModel = model;
     this.statusTracker = new Status();
     this.record = (event) => {
       this.statusTracker.update(event);
@@ -117,11 +122,26 @@ export class Session {
     const catalog = await this.transport.request("model/list", {
       includeHidden: true,
     });
+    this.catalog = catalog.data;
+    if (!this.launchModel) {
+      const configuration = await this.transport.request("config/read", {
+        cwd: this.cwd,
+        includeLayers: false,
+      });
+      const configured = configuration.config?.model;
+      const preferred =
+        configured ?? catalog.data.find((m) => m.isDefault)?.model;
+      // Preparation precedes the native picker. Its selected model wins in open().
+      this.launchModel = preferred ?? DEFAULT_MODEL;
+    }
     this.model = catalog.data.find(
-      (m) => m.model === "gpt-6-astra" || m.id === "gpt-6-astra",
+      (m) => m.model === this.launchModel || m.id === this.launchModel,
     );
+    this.requireSupportedSelection(this.launchModel);
     if (!this.model)
-      throw new Error("Astra is unavailable in this Codex account");
+      throw new Error(
+        `Model ${this.launchModel} is unavailable in this Codex account`,
+      );
     const efforts = this.model.supportedReasoningEfforts.map(
       (x) => x.reasoningEffort,
     );
@@ -141,20 +161,28 @@ export class Session {
           const pace = this.usagePace.snapshot();
           const notice = this.paceNotice(pace);
           if (notice) {
-            this.record({ time: new Date().toISOString(), type: "pace_notice", threadId: this.threadId, message: notice });
+            this.record({
+              time: new Date().toISOString(),
+              type: "pace_notice",
+              threadId: this.threadId,
+              message: notice,
+            });
             if (!this.nativeUi) this.onNotice(notice);
           }
-          const adjustment = pace.state === "above" ? "conservative" : this.effortAdjustment;
+          const adjustment =
+            pace.state === "above" ? "conservative" : this.effortAdjustment;
           this.record({
-            time: new Date().toISOString(), type: "usage_pace",
-            threadId: this.threadId, pace,
+            time: new Date().toISOString(),
+            type: "usage_pace",
+            threadId: this.threadId,
+            pace,
             configuredAdjustment: this.effortAdjustment,
             effectiveAdjustment: adjustment,
           });
           return applyEffortAdjustment(
             decision,
             adjustment,
-            efforts,
+            state.supportedEfforts,
           );
         } catch (error) {
           failure = error;
@@ -183,6 +211,7 @@ export class Session {
       record: this.record,
       rpc: (m, p, options) => this.transport.request(m, p, options),
     });
+    if (isManagedModel(this.launchModel)) this.useModel(this.launchModel);
     this.prepared = true;
   }
   async open({ resume, params = {} } = {}) {
@@ -190,13 +219,14 @@ export class Session {
     if (this.threadId) throw new Error("This controller already owns a thread");
     if (!!resume !== this.resumed)
       throw new Error("Thread selection does not match this launch mode");
-    if (params.model && params.model !== "gpt-6-astra")
-      throw new Error("This session uses Astra only");
+    const openingModel = params.model ?? this.launchModel;
+    this.requireSupportedSelection(openingModel);
+    if (isManagedModel(openingModel)) this.useModel(openingModel);
     const gated = !this.fixedEffort;
     const hookConfig = this.hookConfig;
     const options = {
       ...params,
-      model: "gpt-6-astra",
+      model: openingModel,
       ...this.threadOptions,
       config: { ...params.config, ...this.threadOptions.config, ...hookConfig },
     };
@@ -210,8 +240,8 @@ export class Session {
           ...options,
           experimentalRawEvents: true,
         });
-    if (result.model !== "gpt-6-astra")
-      throw new Error("Codex did not select Astra");
+    if (result.model !== openingModel)
+      throw new Error("Codex did not select the requested model");
     this.openResult = result;
     this.selectedModel = result.model;
     if (gated) await this.bridge.waitUntilReady();
@@ -219,12 +249,14 @@ export class Session {
     this.threadPath = result.thread.path;
     this.controller.threadId = this.threadId;
     if (resume) this.controller.context.hydrate(result.thread.turns);
-    this.mode = this.fixedEffort
-      ? "fixed"
-      : resume
-        ? "adaptive-resume"
-        : "adaptive-checkpoint";
-    if (resume && !this.fixedEffort)
+    this.mode = !isManagedModel(openingModel)
+      ? "inactive"
+      : this.fixedEffort
+        ? "fixed"
+        : resume
+          ? "adaptive-resume"
+          : "adaptive-checkpoint";
+    if (resume && !this.fixedEffort && this.mode !== "inactive")
       this.onNotice(
         "Resumed session: Jev reassesses at supported tool checkpoints. Native generation counts and live capture confirmation are unavailable on resume.",
       );
@@ -235,7 +267,7 @@ export class Session {
       threadId: this.threadId,
       mode: this.mode,
       captureAvailable: this.controller.captureEvents,
-      model: "gpt-6-astra",
+      model: openingModel,
       policy: this.fixedEffort ?? "auto",
       sandbox: result.sandbox?.type ?? "unknown",
       requireJev: this.requireJev,
@@ -255,7 +287,8 @@ export class Session {
   async paceLaunchNotice() {
     if (this.paceLaunchChecked) return null;
     this.paceLaunchChecked = true;
-    if (this.fixedEffort || this.manualEffort || this.mode === "inactive") return null;
+    if (this.fixedEffort || this.manualEffort || this.mode === "inactive")
+      return null;
     const pace = await this.usagePace.read();
     return this.paceNotice(pace);
   }
@@ -267,6 +300,9 @@ export class Session {
   status() {
     return this.statusTracker.snapshot({
       running: this.running ?? false,
+      jevPaused: !!this.jevPaused,
+      enablePending: !!this.enablePending,
+      manualEffort: this.manualEffort ?? null,
       logPath: this.logPath,
       sandbox: this.openResult?.sandbox?.type ?? "unknown",
       supportedEfforts:
@@ -285,13 +321,13 @@ export class Session {
       );
     if (effort !== "auto" && !this.status().supportedEfforts.includes(effort))
       throw new Error("Unsupported Astra effort");
-    this.manualEffort = effort === "auto" ? null : effort;
-    this.record({
-      time: new Date().toISOString(),
-      type: "policy_changed",
-      threadId: this.threadId,
-      policy: effort,
-    });
+    if (effort !== "auto" && this.requireJev)
+      throw new Error(
+        "Jev is required; restart with requireJev disabled to select manual settings.",
+      );
+    if (effort === "auto") return this.enableJev();
+    this.pauseJev("effort", effort);
+    this.manualEffort = effort;
     return this.status();
   }
   async run(prompt, { images = [] } = {}) {
@@ -332,23 +368,29 @@ export class Session {
     }
   }
   async startTurn(params) {
+    if (this.settingsUpdate) await this.settingsUpdate.catch(() => {});
     if (this.running) throw new Error("A turn is already running");
     const previousModel = this.selectedModel ?? "gpt-6-astra";
     const model = this.requestedModel(params);
-    const astra = model === "gpt-6-astra";
+    const astra = isManagedModel(model);
     this.requireSupportedSelection(model);
+    const manualModelChange = model !== previousModel;
+    if (manualModelChange && this.requireJev)
+      throw new Error(
+        "Jev is required; restart with requireJev disabled to select manual settings.",
+      );
     if (astra && this.checkpointFailed)
       throw new Error(
         "Native checkpoint failed; restart this session or launch with fixed effort.",
       );
+    if (astra) this.useModel(model);
     const mode = params.collaborationMode;
-    this.selectModel(model);
+    if (manualModelChange) this.pendingModel = model;
     this.running = true;
     try {
       const input = params.input ?? [];
       this.activeInput = input;
       this.controller.captureEvents = !this.resumed;
-      this.joinedMidturn = false;
       this.statusTracker.value.captureAvailable = !this.resumed;
       for (const image of input.filter((x) => x.type === "localImage"))
         if (!(await stat(image.path)).isFile())
@@ -358,7 +400,7 @@ export class Session {
         ...params,
         threadId: this.threadId,
       };
-      if (astra) {
+      if (astra && !this.jevPaused && !manualModelChange) {
         const prompt = input
           .filter((x) => x.type === "text")
           .map((x) => x.text)
@@ -371,17 +413,26 @@ export class Session {
             ["localImage", "image"].includes(x.type),
           ).length,
         });
-        Object.assign(options, { model: "gpt-6-astra", effort });
+        Object.assign(options, { model, effort });
         if (mode)
           options.collaborationMode = {
             ...mode,
             settings: {
               ...mode.settings,
-              model: "gpt-6-astra",
+              model,
               reasoning_effort: effort,
             },
           };
       } else {
+        const forcedEffort = this.manualEffort ?? this.fixedEffort;
+        if (astra && forcedEffort) {
+          options.effort = forcedEffort;
+          if (mode)
+            options.collaborationMode = {
+              ...mode,
+              settings: { ...mode.settings, reasoning_effort: forcedEffort },
+            };
+        }
         this.record({
           time: new Date().toISOString(),
           type: "turn_preparing",
@@ -389,14 +440,20 @@ export class Session {
         });
       }
       const result = await this.transport.request("turn/start", options);
+      if (manualModelChange) {
+        this.pauseJev("model");
+        this.selectModel(model);
+        this.pendingModel = null;
+      }
       // A fast turn can complete in the same JSONL chunk as this response,
       // before the awaiting continuation runs. Do not revive its cleared ID.
       if (this.running) {
-        if (astra) this.controller.attach(result.turn.id);
+        if (astra && !this.jevPaused) this.controller.attach(result.turn.id);
         this.turnId = result.turn.id;
       }
       return result;
     } catch (error) {
+      this.pendingModel = null;
       this.running = false;
       this.controller.stop();
       if (this.selectedModel === model) this.selectModel(previousModel);
@@ -440,34 +497,119 @@ export class Session {
     );
   }
   requireSupportedSelection(model) {
-    if (this.requireJev && model !== "gpt-6-astra")
+    if (this.requireJev && !isManagedModel(model))
       throw new Error(
-        "Jev is required for this session and supports Astra only. Select Astra or restart with requireJev disabled.",
+        "Jev is required for this session and supports Astra and GPT 6.1 Sol. Select a supported model or restart with requireJev disabled.",
       );
   }
-  async updateSettings(params) {
+  pauseJev(reason, effort = null) {
+    if (this.fixedEffort || this.jevPaused) return;
+    this.jevPaused = true;
+    this.enablePending = false;
+    this.controller.stop();
+    this.controller.revision++;
+    this.controller.pending = null;
+    this.record({
+      type: "policy_changed",
+      threadId: this.threadId,
+      policy: "manual",
+      manualEffort: effort,
+    });
+    const message = `Astra-Jev disabled due to a manual ${reason} change. To activate it again, type $astra-jev enable in this chat.`;
+    this.record({
+      type: "jev_policy_notice",
+      threadId: this.threadId,
+      message,
+    });
+    if (!this.nativeUi) this.onNotice(message);
+  }
+  enableJev() {
+    if (this.fixedEffort)
+      throw new Error("Restart without fixed effort to enable Jev.");
+    if (!isManagedModel(this.selectedModel))
+      throw new Error(
+        "Select Astra or GPT 6.1 Sol first, then run $astra-jev enable.",
+      );
+    if (this.running) this.enablePending = true;
+    else {
+      this.jevPaused = false;
+      this.manualEffort = null;
+      this.enablePending = false;
+      this.record({
+        type: "policy_changed",
+        threadId: this.threadId,
+        policy: "auto",
+        manualEffort: null,
+      });
+    }
+    return this.status();
+  }
+  updateSettings(params, method = "thread/settings/update") {
+    const update = (this.settingsUpdate ?? Promise.resolve())
+      .catch(() => {})
+      .then(() => this.applyManualSettings(params, method));
+    this.settingsUpdate = update;
+    return update;
+  }
+  async applyManualSettings(params, method) {
     this.requireSupportedSelection(this.requestedModel(params));
-    const turnId = this.turnId;
-    const result = await this.transport.request("thread/settings/update", params);
-    // Native thread settings affect future turns. Join an active Sol turn only
-    // at a supported checkpoint, where its continuation can be held safely.
-    if (this.running && this.turnId === turnId && this.mode === "inactive")
-      this.pendingAstra = this.requestedModel(params) === "gpt-6-astra";
-    return result;
+    const effort =
+      params.collaborationMode?.settings?.reasoning_effort ?? params.effort;
+    const changed = this.requestedModel(params) !== this.selectedModel;
+    const manualEffort =
+      effort != null && effort !== this.controller.requestedEffort;
+    if (!changed && !manualEffort)
+      return this.transport.request(method, params);
+    if (this.requireJev)
+      throw new Error(
+        "Jev is required; restart with requireJev disabled to select manual settings.",
+      );
+    if (this.fixedEffort) return this.transport.request(method, params);
+    this.manualSettingPending = true;
+    this.controller.suspend();
+    try {
+      // A sent native update can still arrive after cancellation. Serialize the
+      // user's setting behind that acknowledgement, but never behind a slow Jev
+      // evaluation that has not begun publication.
+      await this.controller.publication?.catch(() => {});
+      const result = await this.transport.request(method, params);
+      if (method === "turn/settings/update" && result.status !== "applied")
+        throw new Error(
+          "Manual settings were not applied; Astra-Jev remains active.",
+        );
+      this.pauseJev(changed ? "model" : "effort", manualEffort ? effort : null);
+      if (manualEffort) this.manualEffort = effort;
+      this.selectModel(this.requestedModel(params));
+      return result;
+    } finally {
+      this.manualSettingPending = false;
+    }
+  }
+  useModel(model) {
+    const entry = this.catalog.find((m) => (m.model ?? m.id) === model);
+    if (!isManagedModel(model) || !entry)
+      throw new Error(`Unavailable managed model: ${model}`);
+    this.model = entry;
+    if (this.controller) {
+      this.controller.supportedEfforts = entry.supportedReasoningEfforts.map(
+        (x) => x.reasoningEffort,
+      );
+      this.controller.context.model = model;
+    }
   }
   selectModel(model) {
     this.selectedModel = model;
     // A settings change during a turn applies to the next turn. Keep the
     // running controller attached to the model that owns the current work.
     if (this.running) return;
-    const mode =
-      model !== "gpt-6-astra"
-        ? "inactive"
-        : this.fixedEffort
-          ? "fixed"
-          : this.resumed
-            ? "adaptive-resume"
-            : "adaptive-checkpoint";
+    if (isManagedModel(model)) this.useModel(model);
+    const mode = !isManagedModel(model)
+      ? "inactive"
+      : this.fixedEffort
+        ? "fixed"
+        : this.resumed
+          ? "adaptive-resume"
+          : "adaptive-checkpoint";
     if (this.mode === mode && this.status().model === model) return;
     this.mode = mode;
     this.controller.stop();
@@ -497,7 +639,11 @@ export class Session {
       return;
     }
     if (p.threadId !== this.threadId) return;
-    if (method === "thread/settings/updated" && p.threadSettings?.model)
+    if (
+      method === "thread/settings/updated" &&
+      p.threadSettings?.model &&
+      !this.manualSettingPending
+    )
       this.selectModel(p.threadSettings.model);
     const eventTurnId = p.turnId ?? p.turn?.id;
     const currentTurnId = this.turnId ?? this.controller?.turnId;
@@ -511,8 +657,12 @@ export class Session {
       await this.failCheckpoint();
       return;
     }
-    if (this.joinedMidturn && method.startsWith("rawResponse")) return;
-    if (this.controller && this.mode !== "inactive")
+    if (
+      this.controller &&
+      !this.jevPaused &&
+      !this.pendingModel &&
+      this.mode !== "inactive"
+    )
       await this.controller.handle(method, p);
     if (
       ["item/started", "item/completed"].includes(method) &&
@@ -533,7 +683,7 @@ export class Session {
       this.onText(p.delta);
     }
     if (method === "turn/completed") {
-      if (this.mode === "inactive")
+      if (this.jevPaused || this.mode === "inactive")
         this.record({
           time: new Date().toISOString(),
           type: "turn_completed",
@@ -545,8 +695,8 @@ export class Session {
       this.running = false;
       this.turnId = null;
       this.activeInput = null;
-      this.pendingAstra = false;
       if (this.selectedModel) this.selectModel(this.selectedModel);
+      if (this.enablePending) this.enableJev();
     }
   }
   async serverRequest(message) {
@@ -585,7 +735,12 @@ export class Session {
     });
   }
   async failCheckpoint() {
-    if (this.checkpointFailed || this.closed || this.mode === "inactive")
+    if (
+      this.jevPaused ||
+      this.checkpointFailed ||
+      this.closed ||
+      this.mode === "inactive"
+    )
       return;
     this.checkpointFailed = true;
     this.record({
@@ -602,15 +757,11 @@ export class Session {
     }
   }
   async checkpoint(event, options) {
+    if (this.jevPaused || this.manualSettingPending || this.pendingModel)
+      return;
     // The native relay stays attached so Astra can resume later. Other models
     // pass through without retaining their content or contacting the evaluator.
-    if (this.mode === "inactive") {
-      if (!this.pendingAstra || event?.session_id !== this.threadId ||
-          event?.turn_id !== this.turnId || !this.running) return;
-      if (this.joiningAstra) return this.joiningAstra;
-      this.joiningAstra = this.joinAstra(event).finally(() => { this.joiningAstra = null; });
-      return this.joiningAstra;
-    }
+    if (this.mode === "inactive") return;
     // Stock child threads inherit the parent's config, including this hook.
     // This controller owns one thread: don't alter another thread's result or
     // send its content to Jev simply because it inherited our local relay.
@@ -630,43 +781,14 @@ export class Session {
       }
       return;
     }
-    return this.controller.checkpoint(event, options);
-  }
-  async joinAstra(event) {
-    const turnId = this.turnId;
-    const input = this.activeInput ?? [];
-    // The first half of this turn had no controller capture stream. Reassess
-    // every checkpoint for its remainder instead of inventing a generation lease.
-    this.controller.captureEvents = false;
-    const effort = await this.controller.begin({
-      threadId: this.threadId,
-      prompt: input.filter(x => x.type === "text").map(x => x.text).join("\n"),
-      imageCount: input.filter(x => ["image", "localImage"].includes(x.type)).length,
-      defaultEffort: this.model.defaultReasoningEffort,
-      checkpointEvent: event,
-    });
-    if (!this.running || this.turnId !== turnId || !this.pendingAstra) {
-      this.controller.stop();
-      return;
-    }
-    this.controller.attach(turnId);
     try {
-      const result = await this.transport.request("turn/settings/update", {
-        threadId: this.threadId, turnId, model: "gpt-6-astra", effort,
-      }, { timeoutMs: 4000 });
-      if (result.status !== "applied") throw new Error("Active model switch was not applied");
-      if (!this.running || this.turnId !== turnId) return;
-      this.pendingAstra = false;
-      this.joinedMidturn = true;
-      this.mode = this.fixedEffort ? "fixed" : this.resumed ? "adaptive-resume" : "adaptive-checkpoint";
-      const jevState = this.status().jev;
-      this.record({ time: new Date().toISOString(), type: "model_changed",
-        threadId: this.threadId, model: "gpt-6-astra", mode: this.mode });
-      this.record({ time: new Date().toISOString(), type: "midturn_astra_joined",
-        threadId: this.threadId, turnId, effort, jev: jevState });
+      return await this.controller.checkpoint(event, options);
     } catch (error) {
-      await this.interrupt();
-      throw error;
+      if (
+        (!this.jevPaused && !this.manualSettingPending) ||
+        options?.signal?.aborted
+      )
+        throw error;
     }
   }
   async close() {

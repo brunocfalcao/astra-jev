@@ -62,8 +62,16 @@ export class Status {
         lastError: null,
       });
     if (event.type === "midturn_astra_joined")
-      Object.assign(v, { captureAvailable: false, selectedEffort: event.effort, phase: "running", jev: event.jev });
-    if (event.type === "policy_changed") v.policy = event.policy;
+      Object.assign(v, {
+        captureAvailable: false,
+        selectedEffort: event.effort,
+        phase: "running",
+        jev: event.jev,
+      });
+    if (event.type === "policy_changed") {
+      v.policy = event.policy;
+      v.manualEffort = event.manualEffort ?? null;
+    }
     if (event.type === "turn_preparing")
       Object.assign(v, {
         generations: 0,
@@ -162,6 +170,7 @@ export class Status {
 }
 
 export function statusLines(s) {
+  const paused = s.jevPaused || s.policy === "manual";
   const captureUnavailable =
     s.captureAvailable === false ||
     ["adaptive-resume", "turn-only-resume"].includes(s.mode);
@@ -172,16 +181,22 @@ export function statusLines(s) {
   const effort =
     s.mode === "inactive"
       ? "inactive for selected model"
-      : captureUnavailable
-        ? "unverified for this turn"
-        : (s.capturedEffort ?? "awaiting native capture");
+      : paused
+        ? (s.manualEffort ?? "manual selection")
+        : captureUnavailable
+          ? "unverified for this turn"
+          : (s.capturedEffort ?? "awaiting native capture");
   return [
     `Astra + Jev | ${s.phase} | ${s.live === true ? "live host" : s.live === false ? "recorded, not a liveness check" : "current session"}`,
     modeLabel(s),
-    `Astra captured: ${effort} | Selected: ${s.selectedEffort ?? "none"} | Policy: ${s.policy}`,
-    `Jev: ${s.mode === "inactive" ? "inactive" : s.policy !== "auto" ? "paused by manual effort" : s.jev}${s.jevLatencyMs !== undefined ? ` | Last decision: ${s.jevLatencyMs} ms` : ""}`,
+    `${paused ? "Manual effort" : "Captured effort"}: ${effort} | Jev selected: ${s.selectedEffort ?? "none"} | Policy: ${s.policy}`,
+    `Jev: ${s.mode === "inactive" ? "inactive" : paused ? `paused; run $astra-jev enable${s.enablePending ? " next turn" : ""}` : s.policy !== "auto" ? "inactive for fixed effort" : s.jev}${s.jevLatencyMs !== undefined ? ` | Last decision: ${s.jevLatencyMs} ms` : ""}`,
     ...(s.model ? [`Selected model: ${s.model}`] : []),
-    ...(s.usagePace ? [`Allowance pace at last decision: ${s.usagePace.state} | Adjustment: ${s.effectiveAdjustment} (configured: ${s.configuredAdjustment})`] : []),
+    ...(s.usagePace
+      ? [
+          `Allowance pace at last decision: ${s.usagePace.state} | Adjustment: ${s.effectiveAdjustment} (configured: ${s.configuredAdjustment})`,
+        ]
+      : []),
     ...(s.policyVersion
       ? [
           `Jev policy: ${s.policyVersion} | Confidence: ${s.decisionConfidence ?? "unavailable"} | ${lease}`,
@@ -194,7 +209,7 @@ export function statusLines(s) {
     s.jevAccounting
       ? `Jev totals: ${s.jevInputTokens} input, ${s.jevOutputTokens} output tokens | ${s.jevRequests} evaluations, ${s.jevAttemptsTotal} HTTP attempts, ${s.jevRetries} retries, ${s.jevFailures} failures | ${s.jevElapsedMs} ms cumulative evaluation time${s.jevUnknownUsage || s.jevUnknownAttempts ? " | usage/attempt totals incomplete" : ""}`
       : "Jev totals: not recorded (older session or no evaluator calls)",
-    `Coverage: ${["adaptive-checkpoint", "adaptive-resume"].includes(s.mode) ? "supported local tools; hosted/no-tool continuations excluded" : s.mode}`,
+    `Coverage: ${paused ? "manual selection" : ["adaptive-checkpoint", "adaptive-resume"].includes(s.mode) ? "supported local tools; hosted/no-tool continuations excluded" : s.mode}`,
     ...(s.sandbox ? [`Native sandbox: ${s.sandbox}`] : []),
     ...(s.outsideThreadSeen
       ? [
@@ -212,13 +227,15 @@ export function modeLabel(s) {
   const mode =
     s.mode === "inactive"
       ? "INACTIVE"
-      : s.policy && s.policy !== "auto"
-        ? "FIXED"
-        : ["adaptive-checkpoint", "adaptive-resume"].includes(s.mode)
-          ? "ADAPTIVE"
-          : s.mode === "turn-only-resume"
-            ? "PER-TURN"
-            : "INACTIVE";
+      : s.jevPaused || s.policy === "manual"
+        ? "PAUSED"
+        : s.policy && s.policy !== "auto"
+          ? "FIXED"
+          : ["adaptive-checkpoint", "adaptive-resume"].includes(s.mode)
+            ? "ADAPTIVE"
+            : s.mode === "turn-only-resume"
+              ? "PER-TURN"
+              : "INACTIVE";
   return `Jev mode: ${mode} | Permissions: ${s.sandbox ?? "not selected"} | Require Jev: ${s.requireJev ? "on" : "off"}`;
 }
 

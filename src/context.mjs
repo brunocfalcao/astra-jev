@@ -289,7 +289,7 @@ export class Context {
   }
   state(extra = {}) {
     return {
-      model: "gpt-6-astra",
+      model: this.model ?? "gpt-6-astra",
       latestUserPrompt: this.prompt,
       userPromptIndex: this.userPromptCount,
       originalUserPrompt: this.originalPrompt,

@@ -1,6 +1,6 @@
 {
   "name": "astra-jev",
-  "version": "1.0.1-rc.3",
+  "version": "1.0.1-rc.4",
   "type": "module",
   "bin": {
     "astra-jev": "bin/astra-jev.mjs",
@@ -18,7 +18,7 @@
   "dependencies": {
     "ws": "8.22.0"
   },
-  "description": "Adaptive Astra reasoning effort through stock Codex, with Jev decision evidence.",
+  "description": "Adaptive reasoning effort for GPT-6 Astra and GPT-6.1 Sol through stock Codex, with Jev decision evidence.",
   "license": "MIT",
   "os": [
     "darwin"

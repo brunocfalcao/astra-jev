@@ -8,10 +8,10 @@ macOS beta · Node 22.19+ · Your Codex account + your TypeSafe API key
 
 ## Get started
 
-Install stock Codex and sign in with an account that has GPT-6 Astra access. Then install the latest published archive:
+Install stock Codex and sign in with an account that has GPT-6 Astra or GPT-6.1 Sol access. Then install the latest published archive:
 
 ```sh
-npm install --global --ignore-scripts 'https://github.com/brunocfalcao/astra-jev/releases/download/v1.0.1-rc.3/astra-jev-1.0.1-rc.3.tgz'
+npm install --global --ignore-scripts 'https://github.com/brunocfalcao/astra-jev/releases/download/v1.0.1-rc.4/astra-jev-1.0.1-rc.4.tgz'
 astra-jev-control setup
 astra-jev-control doctor
 ```
@@ -33,9 +33,9 @@ astra-jev resume         # Pick a conversation
 astra-jev resume --last  # Continue the last conversation
 ```
 
-Work normally in Codex. Jev adapts Astra's effort at supported local-tool checkpoints. In the resume picker, Enter resumes; Esc starts fresh.
+Work normally in Codex. Jev adapts effort for Astra and GPT-6.1 Sol at supported local-tool checkpoints. The wrapper uses your Codex model selection. In the resume picker, Enter resumes; Esc starts fresh.
 
-Use `/model` to switch models. Jev pauses for other models. When you switch from another model to Astra during a turn, Jev joins at the next supported local-tool checkpoint; an already-running generation finishes first. Without another checkpoint, it starts next turn. Codex keeps control of permissions.
+Manual model or effort changes pause Jev. To reactivate it on Astra or GPT-6.1 Sol, type `$astra-jev enable` in the same chat. During a turn, reactivation takes effect next turn. Other models remain unmanaged. Codex keeps control of permissions.
 
 Routine effort changes stay quiet. Model transitions and evaluator failures remain visible; decisions remain available in status and logs.
 

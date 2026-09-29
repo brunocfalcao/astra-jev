@@ -7,6 +7,10 @@ description: Configure Astra-Jev, check Jev and Astra connectivity, inspect live
 
 Manage the installed Astra-Jev integration through `astra-jev-control`. Start with its `--help` when the installed interface is unknown. `astra-jev` forwards arguments to Codex: `astra-jev doctor` is Codex's command, not Jev's diagnostic.
 
+## Enable after manual override
+
+When the user types `$astra-jev enable`, run `astra-jev-control enable` in this chat. It targets CODEX_THREAD_ID and enables only its live host. During a turn, activation starts next turn. Selecting a supported model alone does not reactivate Jev. Report command errors; do not change project configuration or choose another session.
+
 ## Configuration
 
 - Run `astra-jev-control config` in the requested project to show the file path and effective settings. Use `--cwd PATH` when the project differs from the current directory.
@@ -28,6 +32,6 @@ Codex owns filesystem, network, approvals, shell snapshots and terminal renderin
 - `astra-jev-control status` reads evidence for CODEX_THREAD_ID without calling Jev. Outside a session use `status --list`, then `status --thread THREAD_ID`; `status --latest` explicitly selects the newest log. Jev totals include every evaluated request, discarded decisions, failures, retries and cumulative evaluation time; incomplete usage is labelled. For a running session with a verified host name, use: `astra-jev-control --status tui-PID`. Do not invent a session name or treat old logs as live evidence.
 - If setup or credentials are missing, use `astra-jev-control setup` in an interactive terminal. Never ask the user to paste a key into chat or print credential files. Setup installs this skill too; `astra-jev-control install-skill` repairs an absent package-managed copy while preserving custom edits.
 
-Report what was observed: selected effort is not necessarily captured effort. On resumed conversations, Jev selects initial effort and reassesses at each supported local-tool checkpoint within the turn. Native live capture confirmation and generation counts remain unavailable; resumed sessions do not use generation leases and can make more Jev requests. An acknowledged effort update is not a captured-effort event. When another model is selected, Jev is inactive until Astra returns. A direct-stock launch cannot reactivate Jev within that process.
+Report what was observed: selected effort is not necessarily captured effort. On resumed conversations, Jev selects initial effort and reassesses at each supported local-tool checkpoint within the turn. Native live capture confirmation and generation counts remain unavailable; resumed sessions do not use generation leases and can make more Jev requests. An acknowledged effort update is not a captured-effort event. Astra and GPT 6.1 Sol support adaptive effort. Launch `astra-jev` normally; the native Codex model selection is detected automatically. Manual model changes pause Jev; explicitly enable it on either supported model. Unsupported models remain inactive. A direct-stock launch cannot reactivate Jev within that process.
 
 For a failure, check effective project settings, doctor, and the relevant live status or bounded decision records. Do not change unrelated application code, run cleaners, or query private databases just to diagnose the integration. Finish with the setting or finding, the check performed, and any restart required.

@@ -153,9 +153,12 @@ test("native session lowers Jev above pace and restores configured adjustment", 
     records.length = 0;
     await session.run("Synthetic manual task");
     assert.equal(
-      records.find((e) => e.type === "decision_selected").effort,
-      "high",
+      records.some((e) => e.type === "decision_selected"),
+      false,
     );
+    assert.equal(session.status().manualEffort, "high");
+    assert.equal(session.status().jevPaused, true);
+    assert.equal(session.status().policy, "manual");
     assert.equal(
       records.some((e) => e.type === "usage_pace"),
       false,

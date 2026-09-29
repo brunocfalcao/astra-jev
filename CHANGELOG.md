@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.1-rc.4 — 2026-09-29
+
+### Features
+- Support adaptive reasoning on GPT-6.1 Sol as well as GPT-6 Astra, using each model's native effort catalog and correct evaluator identity.
+- Detect the selected Codex model at launch without forcing Astra.
+- Respect manual model and effort choices by pausing Jev; `$astra-jev enable` restores adaptation in the same chat, starting next turn when already busy.
+
+### Fixes
+- Prevent slow evaluator work from overriding manual choices; serialize manual settings behind an already-sent native effort update.
+- Allow native resume previews before attachment while preserving owned-thread boundaries afterward.
+- Preserve strict `requireJev` control when a turn-level model change would pause adaptation.
+
+**Release candidate:** macOS only. Independent clean-Mac proof remains pending. Restart after installing; existing sessions retain loaded code.
+
 ## 1.0.1-rc.3 — 2026-09-29
 
 ### Features

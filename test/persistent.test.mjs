@@ -10,7 +10,63 @@ import {
   SessionHost,
   SessionClient,
   sessionSocket,
+  enableSession,
 } from "../src/persistent.mjs";
+
+test("enable discovers only the current thread and refuses missing or duplicate hosts", async () => {
+  const directory = await mkdtemp("/tmp/astra-jev-enable-test-");
+  const hosts = [];
+  let enabled = 0;
+  const create = async (name, threadId) => {
+    const session = {
+      threadId,
+      transport: new (await import("node:events")).EventEmitter(),
+      status() {
+        return { threadId: this.threadId, jevPaused: true };
+      },
+      enableJev() {
+        enabled++;
+        return { ...this.status(), jevPaused: false };
+      },
+      async close() {},
+    };
+    const host = new SessionHost({
+      session,
+      info: {},
+      path: await sessionSocket(name, directory),
+      observerOnly: true,
+    });
+    hosts.push(host);
+    await host.listen();
+    return session;
+  };
+  try {
+    await assert.rejects(
+      () => enableSession(undefined, directory),
+      /CODEX_THREAD_ID/,
+    );
+    await create("other", "other-thread");
+    await assert.rejects(
+      () => enableSession("target-thread", directory),
+      /one live/,
+    );
+    assert.equal(enabled, 0);
+    const target = await create("target", "target-thread");
+    const result = await enableSession("target-thread", directory);
+    assert.equal(result.threadId, "target-thread");
+    assert.equal(result.jevPaused, false);
+    assert.equal(enabled, 1);
+    await create("duplicate", target.threadId);
+    await assert.rejects(
+      () => enableSession("target-thread", directory),
+      /duplicate hosts/,
+    );
+    assert.equal(enabled, 1);
+  } finally {
+    for (const host of hosts) await host.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("detach and reconnect retain one native session, raw capture events and approvals", async () => {
   const directory = await mkdtemp("/tmp/astra-jev-persist-test-");
@@ -82,7 +138,10 @@ test("detach and reconnect retain one native session, raw capture events and app
       ["low", "high", "low", "high"],
     );
     assert.equal(records.filter((x) => x.type === "session_opened").length, 1);
-    assert.equal((await second.setEffort("high")).policy, "high");
+    const manual = await second.setEffort("high");
+    assert.equal(manual.policy, "manual");
+    assert.equal(manual.manualEffort, "high");
+    assert.equal(manual.jevPaused, true);
     const count = choices;
     await second.run("Manual fixture");
     assert.equal(choices, count);

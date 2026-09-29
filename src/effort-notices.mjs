@@ -13,12 +13,17 @@ export class EffortNotices {
   }
   handle(event) {
     if (event.threadId !== this.session.threadId) return;
+    if (event.type === "jev_policy_notice") {
+      this.pending = null;
+      this.show(event, "policy", event.message);
+    }
     if (event.type === "pace_notice") this.show(event, "pace", event.message);
     if (event.type === "model_changed") {
       this.pending = null;
       this.evaluation = null;
       this.captured = null;
       this.selected = null;
+      if (this.session.jevPaused) return;
       const alreadyInactive = this.inactive;
       this.inactive = event.mode === "inactive";
       if (this.inactive && alreadyInactive) return;

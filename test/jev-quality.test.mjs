@@ -1,6 +1,37 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateDecision } from "../src/jev.mjs";
+import { decisionRequest, validateDecision } from "../src/jev.mjs";
+
+test("evaluator requests identify the selected managed model and its exact effort catalog", () => {
+  for (const [model, label, supportedEfforts] of [
+    ["gpt-6-astra", "GPT-6 Astra", ["low", "high", "ultra"]],
+    ["gpt-6.1-sol", "GPT-6.1 Sol", ["low", "medium", "max"]],
+  ]) {
+    const request = decisionRequest({
+      model,
+      supportedEfforts,
+      latestUserPrompt: "Synthetic task",
+    });
+    assert.equal(request.state.model, model);
+    assert.ok(
+      request.questions.effort.instructions.includes(
+        `NEXT generation of ${label}`,
+      ),
+    );
+    assert.deepEqual(
+      Object.keys(request.questions.effort.criteria),
+      supportedEfforts,
+    );
+  }
+  assert.throws(
+    () => decisionRequest({ model: "gpt-6-sol", supportedEfforts: ["low"] }),
+    /Unsupported managed model/,
+  );
+  assert.throws(
+    () => decisionRequest({ model: "gpt-6.1-sol", supportedEfforts: [] }),
+    /Unsupported managed model/,
+  );
+});
 
 function reply() {
   return {

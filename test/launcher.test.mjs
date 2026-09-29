@@ -173,6 +173,7 @@ test("launch routing preserves prompts, resume syntax and Codex option boundarie
   assert.deepEqual(
     planLaunch(["-mgpt-6-astra", "-Cother", "-cweb_search=live"], "/project"),
     {
+      model: "gpt-6-astra",
       cwd: "/project/other",
       command: undefined,
       resume: false,

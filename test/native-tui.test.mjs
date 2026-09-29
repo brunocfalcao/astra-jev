@@ -40,8 +40,6 @@ test("managed TUI leaves native display defaults alone and forwards explicit dis
       assert.deepEqual(JSON.parse(await readFile(capture, "utf8")), [
         "--remote",
         "unix:///owner/native.sock",
-        "--model",
-        "gpt-6-astra",
         ...args,
       ]);
     }
@@ -693,5 +691,53 @@ test("failed or cancelled fresh preparation closes the candidate and preserves t
     } finally {
       await gateway.close();
     }
+  }
+});
+
+test("resume previews can read candidate turns only before attachment", async () => {
+  const calls = [];
+  const transport = new EventEmitter();
+  transport.request = async (method, params) => {
+    calls.push({ method, params });
+    return { data: [] };
+  };
+  const session = {
+    transport,
+    resumed: true,
+    controller: { context: { clean: (text) => text } },
+  };
+  const gateway = new NativeTui({ session });
+  let client;
+  try {
+    await gateway.open();
+    client = new WebSocket(`ws+unix://${gateway.path}:/rpc`);
+    await once(client, "open");
+    let id = 0;
+    const rpc = async (method, threadId) => {
+      const reply = once(client, "message");
+      client.send(JSON.stringify({ id: ++id, method, params: { threadId } }));
+      return JSON.parse((await reply)[0]);
+    };
+    for (const method of ["thread/read", "thread/turns/list"]) {
+      assert.deepEqual((await rpc(method, "candidate")).result, { data: [] });
+    }
+    assert.equal(calls.length, 2);
+    assert.match(
+      (await rpc("thread/archive", "candidate")).error.message,
+      /different owned thread/,
+    );
+    session.threadId = "owned";
+    gateway.attached = true;
+    for (const method of ["thread/read", "thread/turns/list"]) {
+      assert.match(
+        (await rpc(method, "candidate")).error.message,
+        /different owned thread/,
+      );
+      assert.deepEqual((await rpc(method, "owned")).result, { data: [] });
+    }
+    assert.equal(calls.length, 4);
+  } finally {
+    client?.terminate();
+    await gateway.close();
   }
 });

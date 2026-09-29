@@ -1,7 +1,7 @@
 import { createServer, createConnection } from "node:net";
-import { mkdir, lstat, chmod } from "node:fs/promises";
+import { mkdir, lstat, chmod, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 
@@ -132,6 +132,10 @@ export class SessionHost {
             };
           } else if (method === "status") {
             result = { ...this.session.status?.(), live: true };
+          } else if (method === "enable") {
+            if (!params.threadId || params.threadId !== this.session.threadId)
+              throw new Error("Current thread does not match this session");
+            result = this.session.enableJev();
           } else if (method === "stop") {
             peer.send({ id, result: { stopped: true } });
             setImmediate(() => {
@@ -302,5 +306,42 @@ export class SessionClient extends EventEmitter {
       this.socket.once("close", resolve);
       this.socket.end();
     });
+  }
+}
+
+export async function enableSession(threadId, directory) {
+  if (!threadId)
+    throw new Error(
+      "Run enable inside the target Codex chat (CODEX_THREAD_ID is required).",
+    );
+  const root = dirname(await sessionSocket("discovery", directory));
+  const matches = [];
+  try {
+    for (const name of await readdir(root)) {
+      if (!name.endsWith(".sock")) continue;
+      const path = join(root, name);
+      const info = await lstat(path).catch(() => null);
+      if (
+        !info?.isSocket() ||
+        info.uid !== process.getuid() ||
+        info.mode & 0o077
+      )
+        continue;
+      const client = new SessionClient({ path });
+      try {
+        await client.connect();
+        if ((await client.status()).threadId === threadId) matches.push(client);
+        else await client.close();
+      } catch {
+        await client.close();
+      }
+    }
+    if (matches.length !== 1)
+      throw new Error(
+        "Expected one live Astra-Jev host for this thread; relaunch or close duplicate hosts.",
+      );
+    return await matches[0].request("enable", { threadId });
+  } finally {
+    await Promise.all(matches.map((client) => client.close()));
   }
 }

@@ -16,11 +16,18 @@ source = json.loads((project / 'verification/native-tui-effort-notices.json').re
 thread_id = source['threadId']
 config_path = project.parent / 'astra-jev.json'
 config_existed = config_path.exists()
+baseline = subprocess.run([
+    'node', '--input-type=module', '-e',
+    "import {AppServer} from './src/app-server.mjs'; const server=new AppServer({cwd:process.argv[2]}); try {await server.connect(); const result=await server.request('thread/resume',{threadId:process.argv[1],cwd:process.argv[2]}); console.log(JSON.stringify({sandbox:result.sandbox.type}));} finally {await server.close();}",
+    thread_id, str(project.parent),
+], cwd=project, capture_output=True, text=True, timeout=15)
+assert baseline.returncode == 0, 'Cannot establish stock Codex resume permissions'
+native_sandbox = json.loads(baseline.stdout)['sandbox']
 
 def run_case(args, picker=False, turn=False):
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 35, 100, 0, 0))
-    child = subprocess.Popen([str(project / 'bin/astra-jev.mjs'), '--cd', str(project.parent), *args], stdin=slave, stdout=slave, stderr=slave, start_new_session=True, env={**os.environ, 'TERM': 'xterm-256color', 'NO_COLOR': '1', 'ASTRA_JEV_PRIVACY_ACK': '1'})
+    child = subprocess.Popen([str(project / 'bin/astra-jev.mjs'), '--cd', str(project.parent), *args], stdin=slave, stdout=slave, stderr=slave, start_new_session=True, env={**os.environ, 'TERM': 'xterm-256color', 'NO_COLOR': '1'})
     os.close(slave)
     transcript = ''
     records = []
@@ -36,7 +43,8 @@ def run_case(args, picker=False, turn=False):
                 if b'\x1b[6n' in data: os.write(master, b'\x1b[1;1R')
                 if b'\x1b[c' in data: os.write(master, b'\x1b[?1;2c')
             if not log_path:
-                match = re.search(r'Decision log: ([^\r\n]+)', transcript)
+                status = subprocess.run([str(project / 'bin/astra-jev-control.mjs'), '--status', f'tui-{child.pid}'], capture_output=True, text=True, timeout=10)
+                match = re.search(r'Decision log: ([^\r\n]+)', status.stdout)
                 if match: log_path = match.group(1)
             if log_path:
                 records = [json.loads(line) for line in pathlib.Path(log_path).read_text().splitlines()]
@@ -50,13 +58,8 @@ def run_case(args, picker=False, turn=False):
                     child.terminate()
                 else:
                     time.sleep(2)
-                    os.write(master, b'/quit')
-                    time.sleep(1)
-                    os.write(master, b'\r')
+                    os.write(master, b'\x04')
                 stopped = True
-                if not turn and not picker:
-                    time.sleep(0.5)
-                    os.write(master, b"\r")
         child.wait(timeout=3)
         assert stopped, 'Native resume did not reach the expected state'
         if turn: assert child.returncode == 0
@@ -65,9 +68,10 @@ def run_case(args, picker=False, turn=False):
             assert any(r['type'] == 'turn_completed' and r['status'] == 'completed' for r in records)
             assert any(r['type'] == 'native_tui_effort_notice' for r in records)
             assert 'RESUME_OK' in transcript
-            assert selected[0]['sandbox'] == 'readOnly'
-            assert 'PER-TURN' in transcript
-        return {'args': args, 'passed': True, 'threadId': None if picker else thread_id, 'mode': None if picker else selected[0]['mode'], 'exitCode': child.returncode, 'logPath': log_path, 'jevDecisions': sum(r['type'] == 'decision_selected' for r in records)}
+            assert selected[0]['sandbox'] == native_sandbox, 'Wrapper changed native resume permissions'
+            assert selected[0]['mode'] == 'adaptive-resume'
+            assert selected[0]['captureAvailable'] is False
+        return {'args': args, 'passed': True, 'threadId': None if picker else thread_id, 'mode': None if picker else selected[0]['mode'], 'nativeSandbox': native_sandbox, 'exitCode': child.returncode, 'logPath': log_path, 'jevDecisions': sum(r['type'] == 'decision_selected' for r in records)}
     finally:
         if child.poll() is None:
             child.terminate()

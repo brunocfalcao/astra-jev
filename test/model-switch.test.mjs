@@ -81,8 +81,9 @@ function fixture(options = {}, tuiOptions = {}) {
     replies,
     rpc,
     turn,
-    open: async ({ resume } = {}) => {
-      await session.open({ resume });
+    open: async ({ resume, params, bootstrap = false } = {}) => {
+      if (bootstrap) await session.prepare({ resume });
+      else await session.open({ resume, params });
       await gateway.open();
       client = new WebSocket(`ws+unix://${gateway.path}:/rpc`);
       await once(client, "open");
@@ -99,7 +100,9 @@ function fixture(options = {}, tuiOptions = {}) {
       });
       await rpc(
         resume ? "thread/resume" : "thread/start",
-        resume ? { threadId: session.threadId } : {},
+        resume
+          ? { threadId: session.threadId ?? resume, ...params }
+          : (params ?? {}),
       );
     },
     close: async () => {
@@ -110,15 +113,16 @@ function fixture(options = {}, tuiOptions = {}) {
   };
 }
 
-test("Astra to Sol to Astra preserves the thread, native effort and permissions while suspending Jev", async () => {
+test("manual model changes pause Jev until explicit enable, while initial Astra effort echoes remain adaptive", async () => {
   const f = fixture({
     threadOptions: { sandbox: "read-only", approvalPolicy: "never" },
   });
   try {
     await f.open();
     const thread = f.session.threadId;
-    await f.turn({ model: "gpt-6-astra" });
+    await f.turn({ model: "gpt-6-astra", effort: "high" });
     assert.equal(f.states.length, 2);
+    assert.equal(f.session.jevPaused, undefined);
     assert.equal(f.session.status().capturedEffort, "low");
     const native = {
       model: "gpt-6-sol",
@@ -158,32 +162,30 @@ test("Astra to Sol to Astra preserves the thread, native effort and permissions 
     await f.turn({ model: "gpt-6-astra", effort: "high" });
     assert.equal(f.session.threadId, thread);
     assert.equal(f.session.mode, "adaptive-checkpoint");
-    assert.equal(f.states.length, 4);
-    assert.equal(f.session.status().capturedEffort, "low");
+    assert.equal(f.session.jevPaused, true);
+    assert.equal(f.states.length, 2);
+    assert.match(modeLabel(f.session.status()), /PAUSED/);
+    assert.match(
+      statusLines(f.session.status()).join("\n"),
+      /\$astra-jev enable/,
+    );
     assert.equal(JSON.stringify(f.states).includes("Only Codex sees"), false);
     const notices = f.replies
       .filter((m) => m.method === "hook/completed")
       .flatMap((m) => m.params.run.entries.map((x) => x.text));
-    assert.ok(
-      notices.some((text) =>
-        /Automatic reasoning adjustments are off for this model/.test(text),
-      ),
-    );
-    assert.ok(
-      notices.some((text) =>
-        /Automatic reasoning adjustments are back on/.test(text),
-      ),
-    );
-    assert.equal(
-      notices.filter((text) => text === "Astra set to LOW effort (Jev)").length,
-      0,
-    );
+    assert.deepEqual(notices, [
+      "Astra-Jev disabled due to a manual model change. To activate it again, type $astra-jev enable in this chat.",
+    ]);
+    f.session.enableJev();
+    await f.turn({ model: "gpt-6-astra" });
+    assert.equal(f.states.length, 4);
+    assert.equal(f.session.status().capturedEffort, "low");
   } finally {
     await f.close();
   }
 });
 
-test("collaboration model takes precedence and confirmed picker changes update Jev status", async () => {
+test("picker choices stay paused across collaboration settings and native turn settings", async () => {
   const f = fixture();
   try {
     await f.open();
@@ -201,6 +203,7 @@ test("collaboration model takes precedence and confirmed picker changes update J
       collaborationMode: mode,
     });
     assert.equal(f.session.mode, "inactive");
+    assert.equal(f.session.jevPaused, true);
     assert.equal(f.states.length, 0);
     await f.turn({
       model: "gpt-6-astra",
@@ -228,25 +231,26 @@ test("collaboration model takes precedence and confirmed picker changes update J
       model: "gpt-6-astra",
     });
     assert.equal(f.session.mode, "adaptive-checkpoint");
-    await assert.rejects(
-      () =>
-        f.rpc("turn/settings/update", {
-          threadId: f.session.threadId,
-          effort: "high",
-        }),
-      /Jev manages effort/,
-    );
+    assert.equal(f.session.jevPaused, true);
+    await f.rpc("turn/settings/update", {
+      threadId: f.session.threadId,
+      effort: "high",
+    });
+    assert.equal(f.session.manualEffort, "high");
     await f.turn({
       collaborationMode: {
         ...mode,
         settings: { ...mode.settings, model: "gpt-6-astra" },
       },
     });
-    assert.equal(f.states.length, 2);
+    assert.equal(f.states.length, 0);
     const astra = f.requests
       .filter((r) => r.method === "turn/start")
       .at(-1).params;
-    assert.equal(astra.collaborationMode.settings.reasoning_effort, "low");
+    assert.equal(astra.collaborationMode.settings.reasoning_effort, "high");
+    f.session.enableJev();
+    await f.turn({ model: "gpt-6-astra" });
+    assert.equal(f.states.length, 2);
   } finally {
     await f.close();
   }
@@ -275,7 +279,33 @@ test("required Jev rejects non-Astra selection before changing the backend or ev
   }
 });
 
-test("resumed and fixed sessions restore their original Astra policy after a model switch", async () => {
+test("required Jev rejects a turn-level managed model change that would pause adaptation", async () => {
+  const f = fixture({ requireJev: true });
+  try {
+    await f.open();
+    await f.turn({ model: "gpt-6-astra" });
+    const evaluations = f.states.length;
+    await assert.rejects(
+      () => f.turn({ model: "gpt-6.1-sol" }),
+      /Jev is required/,
+    );
+    assert.equal(f.session.selectedModel, "gpt-6-astra");
+    assert.equal(Boolean(f.session.jevPaused), false);
+    assert.equal(f.states.length, evaluations);
+    assert.equal(
+      f.requests.some(
+        (r) => r.method === "turn/start" && r.params.model === "gpt-6.1-sol",
+      ),
+      false,
+    );
+    await f.turn({ model: "gpt-6-astra" });
+    assert.equal(f.states.length, evaluations + 2);
+  } finally {
+    await f.close();
+  }
+});
+
+test("resumed sessions require enable after a model switch, while fixed sessions retain fixed effort", async () => {
   for (const policy of ["resume", "fixed"]) {
     const f = fixture(policy === "fixed" ? { fixedEffort: "high" } : {});
     try {
@@ -287,7 +317,13 @@ test("resumed and fixed sessions restore their original Astra policy after a mod
       assert.match(modeLabel(f.session.status()), /INACTIVE/);
       await f.turn({ model: "gpt-6-astra" });
       assert.equal(f.session.mode, originalMode);
-      assert.equal(f.states.length, policy === "fixed" ? 0 : 2);
+      assert.equal(f.states.length, 0);
+      assert.equal(Boolean(f.session.jevPaused), policy === "resume");
+      if (policy === "resume") {
+        f.session.enableJev();
+        await f.turn({ model: "gpt-6-astra" });
+        assert.equal(f.states.length, 2);
+      }
       const sent = f.requests
         .filter((r) => r.method === "turn/start")
         .at(-1).params;
@@ -303,7 +339,7 @@ test("resumed and fixed sessions restore their original Astra policy after a mod
   }
 });
 
-test("a model picked during an Astra turn applies after completion without stopping its checkpoint", async () => {
+test("a manual model update cancels a slow checkpoint without late Jev publication", async () => {
   let calls = 0,
     release,
     checkpointReached;
@@ -334,13 +370,23 @@ test("a model picked during an Astra turn applies after completion without stopp
     });
     assert.equal(f.session.selectedModel, "gpt-6-sol");
     assert.equal(f.session.mode, "adaptive-checkpoint");
-    assert.equal(f.session.controller.active, true);
+    assert.equal(f.session.jevPaused, true);
+    assert.equal(f.session.controller.active, false);
     release();
     assert.equal((await running).status, "completed");
     assert.equal(f.session.mode, "inactive");
     assert.equal(f.session.checkpointFailed, undefined);
+    assert.equal(
+      f.requests.some((r) => r.method === "turn/settings/update"),
+      false,
+    );
     await f.turn({ effort: "medium" });
     assert.equal(calls, 2);
+    await f.turn({ model: "gpt-6-astra" });
+    assert.equal(calls, 2);
+    f.session.enableJev();
+    await f.turn({ model: "gpt-6-astra" });
+    assert.ok(calls > 2);
   } finally {
     release?.();
     await f.close();
@@ -373,7 +419,7 @@ test("a rejected inactive turn releases ownership and can return to Astra", asyn
   }
 });
 
-test("inactive notices appear only when leaving Astra, with silent non-Astra turns and switches", async () => {
+test("manual pause notice appears once and selecting Astra does not reactivate Jev", async () => {
   const f = fixture();
   const notices = () =>
     f.replies
@@ -386,40 +432,34 @@ test("inactive notices appear only when leaving Astra, with silent non-Astra tur
       threadId: f.session.threadId,
       model,
     });
-  const inactive =
-    "Automatic reasoning adjustments are off for this model. Select Astra to turn them back on.";
+  const paused =
+    "Astra-Jev disabled due to a manual model change. To activate it again, type $astra-jev enable in this chat.";
   try {
     await f.open();
     assert.deepEqual(notices(), []);
     await select("gpt-6-sol");
-    assert.deepEqual(notices(), [inactive]);
+    assert.deepEqual(notices(), [paused]);
     await f.turn({ effort: "medium" });
     await f.turn({ effort: "medium" });
-    assert.deepEqual(notices(), [inactive]);
+    assert.deepEqual(notices(), [paused]);
     await select("gpt-6-luna");
     await f.turn({ effort: "low" });
-    assert.deepEqual(notices(), [inactive]);
+    assert.deepEqual(notices(), [paused]);
     assert.equal(f.session.status().mode, "inactive");
     assert.equal(f.states.length, 0);
     await select("gpt-6-astra");
-    assert.deepEqual(notices(), [
-      inactive,
-      "Automatic reasoning adjustments are back on.",
-    ]);
+    assert.deepEqual(notices(), [paused]);
+    assert.equal(f.session.jevPaused, true);
     await select("gpt-6-sol");
     await f.turn({ effort: "medium" });
-    assert.deepEqual(notices(), [
-      inactive,
-      "Automatic reasoning adjustments are back on.",
-      inactive,
-    ]);
+    assert.deepEqual(notices(), [paused]);
     assert.equal(f.states.length, 0);
   } finally {
     await f.close();
   }
 });
 
-test("quiet TUI keeps fresh and resumed Jev decisions, status and model-switch notices", async () => {
+test("quiet TUI still shows the manual pause notice and only explicit enable restores Jev", async () => {
   for (const resume of [undefined, "fixture-resumed"]) {
     const f = fixture({}, { verbose: false });
     const notices = () =>
@@ -448,13 +488,15 @@ test("quiet TUI keeps fresh and resumed Jev decisions, status and model-switch n
       await f.turn({ model: "gpt-6-sol", effort: "medium" });
       assert.equal(f.states.length, evaluations);
       assert.deepEqual(notices(), [
-        "Automatic reasoning adjustments are off for this model. Select Astra to turn them back on.",
+        "Astra-Jev disabled due to a manual model change. To activate it again, type $astra-jev enable in this chat.",
       ]);
       await f.turn({ model: "gpt-6-astra" });
       assert.deepEqual(notices(), [
-        "Automatic reasoning adjustments are off for this model. Select Astra to turn them back on.",
-        "Automatic reasoning adjustments are back on.",
+        "Astra-Jev disabled due to a manual model change. To activate it again, type $astra-jev enable in this chat.",
       ]);
+      assert.equal(f.states.length, evaluations);
+      f.session.enableJev();
+      await f.turn({ model: "gpt-6-astra" });
       assert.equal(f.states.length, evaluations + 2);
     } finally {
       await f.close();
@@ -503,32 +545,82 @@ test("completion delivered before the turn-start continuation cannot restore a f
   }
 });
 
-for (const resume of [false, true]) {
-  test(`Sol to Astra joins the running turn at its checkpoint (${resume ? 'resume' : 'fresh'})`, async () => {
+for (const resume of [undefined, "thread-checkpoint"]) {
+  test(`Sol uses adaptive checkpoints with correct evaluator identity (${resume ? "resume" : "fresh"})`, async () => {
     const f = fixture();
-    let reached, release;
-    const ready = new Promise(r => reached = r);
-    const held = new Promise(r => release = r);
-    const checkpoint = f.session.checkpoint.bind(f.session);
-    f.session.checkpoint = async (...args) => {
-      reached();
-      await held;
-      return checkpoint(...args);
-    };
     try {
-      await f.open(resume ? { resume: 'thread-checkpoint' } : {});
-      const running = f.turn({ model: 'gpt-6-sol', effort: 'medium' });
-      await ready;
+      await f.open({ resume, params: { model: "gpt-6.1-sol" } });
+      await f.turn({ model: "gpt-6.1-sol" });
+      assert.ok(f.states.length >= 2);
+      assert.ok(f.states.every((state) => state.model === "gpt-6.1-sol"));
+      assert.equal(f.session.status().model, "gpt-6.1-sol");
+      assert.equal(
+        f.requests.find((r) => r.method === "turn/start").params.effort,
+        "low",
+      );
+    } finally {
+      await f.close();
+    }
+  });
+}
+
+test("native launch detects configured Sol without a model argument", async () => {
+  const f = fixture();
+  const request = f.session.transport.request.bind(f.session.transport);
+  f.session.transport.request = (method, ...args) =>
+    method === "config/read"
+      ? Promise.resolve({ config: { model: "gpt-6.1-sol" } })
+      : request(method, ...args);
+  try {
+    await f.open({ bootstrap: true });
+    assert.equal(f.session.selectedModel, "gpt-6.1-sol");
+    assert.equal(Boolean(f.session.jevPaused), false);
+    await f.turn({});
+    assert.equal(f.states.length, 2);
+    assert.ok(f.states.every((state) => state.model === "gpt-6.1-sol"));
+  } finally {
+    await f.close();
+  }
+});
+
+test("switching Astra to Sol preserves manual pause and enables Sol evaluation", async () => {
+  const f = fixture();
+  try {
+    await f.open();
+    await f.turn({ model: "gpt-6-astra" });
+    const before = f.states.length;
+    await f.turn({ model: "gpt-6.1-sol" });
+    assert.equal(f.states.length, before);
+    assert.equal(f.session.jevPaused, true);
+    f.session.enableJev();
+    await f.turn({ model: "gpt-6.1-sol" });
+    assert.ok(f.states.length > before);
+    assert.ok(f.states.slice(before).every((s) => s.model === "gpt-6.1-sol"));
+  } finally {
+    await f.close();
+  }
+});
+
+for (const resume of [undefined, "thread-checkpoint"]) {
+  test(`native bootstrap accepts unmanaged configured model (${resume ? "resume" : "fresh"})`, async () => {
+    const f = fixture();
+    try {
+      await f.open({
+        resume,
+        bootstrap: true,
+        params: { model: "gpt-5.6-sol" },
+      });
+      assert.equal(f.session.status().model, "gpt-5.6-sol");
+      assert.equal(f.session.mode, "inactive");
+      await f.turn({ model: "gpt-5.6-sol" });
       assert.equal(f.states.length, 0);
-      await f.rpc('thread/settings/update', { threadId: f.session.threadId, model: 'gpt-6-astra' });
-      release();
-      assert.equal((await running).status, 'completed');
+      await f.turn({ model: "gpt-6.1-sol" });
+      f.session.enableJev();
+      await f.turn({ model: "gpt-6.1-sol" });
       assert.ok(f.states.length > 0);
-      assert.equal(f.session.status().captureAvailable, false);
-      assert.equal(f.states[0].latestUserPrompt, 'Synthetic prompt');
-      assert.ok(f.states[0].recentToolCalls.length > 0);
-      assert.ok(f.requests.some(r => r.method === 'turn/settings/update' && r.params.model === 'gpt-6-astra'));
-      assert.equal(f.session.mode, resume ? 'adaptive-resume' : 'adaptive-checkpoint');
-    } finally { release?.(); await f.close(); }
+      assert.ok(f.states.every((state) => state.model === "gpt-6.1-sol"));
+    } finally {
+      await f.close();
+    }
   });
 }

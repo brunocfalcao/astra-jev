@@ -63,6 +63,7 @@ try {
     const createSession = () =>
       new Session({
         cwd: plan.cwd,
+        model: plan.model,
         nativeUi: true,
         config: [...plan.config],
         fixedEffort: config.fixedEffort,
